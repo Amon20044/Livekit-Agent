@@ -96,6 +96,9 @@ jobs:
 
             cd '${{ env.APP_DIR }}'
 
+            # Remove any host .venv so it never leaks into the Docker build context
+            rm -rf .venv
+
             # Build image from Dockerfile
             sudo docker build -t '${{ env.IMAGE_NAME }}' .
 
