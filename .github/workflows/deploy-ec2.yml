@@ -66,6 +66,7 @@ jobs:
             --exclude='__pycache__' \
             --exclude='.ruff_cache' \
             --exclude='.pytest_cache' \
+            --exclude='.cache' \
             -czf /tmp/my-agent.tar.gz .
 
       - name: Upload app bundle
@@ -89,18 +90,27 @@ jobs:
             fi
             sudo systemctl start docker
 
-            # Extract code
+            # Preserve env file, wipe everything else for a clean deploy
+            if [ -f '${{ env.ENV_FILE }}' ]; then
+              cp '${{ env.ENV_FILE }}' /tmp/my-agent-env.bak
+            fi
+            sudo rm -rf '${{ env.APP_DIR }}'
             sudo mkdir -p '${{ env.APP_DIR }}'
+            if [ -f /tmp/my-agent-env.bak ]; then
+              sudo mv /tmp/my-agent-env.bak '${{ env.ENV_FILE }}'
+            fi
+
+            # Extract fresh code (no .venv or stale artifacts)
             sudo tar -xzf /tmp/my-agent.tar.gz -C '${{ env.APP_DIR }}'
             sudo chown -R '${{ secrets.EC2_USER }}':'${{ secrets.EC2_USER }}' '${{ env.APP_DIR }}'
 
             cd '${{ env.APP_DIR }}'
 
-            # Remove any host .venv so it never leaks into the Docker build context
-            rm -rf .venv
+            # Free disk space from previous builds before rebuilding
+            sudo docker image prune -f
 
-            # Build image from Dockerfile
-            sudo docker build -t '${{ env.IMAGE_NAME }}' .
+            # Build image from scratch — no-cache prevents stale layers
+            sudo docker build --no-cache -t '${{ env.IMAGE_NAME }}' .
 
             # Replace running container with the new image
             sudo docker stop '${{ env.CONTAINER_NAME }}' 2>/dev/null || true
