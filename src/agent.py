@@ -16,11 +16,10 @@ from livekit.agents import (
     JobContext,
     JobProcess,
     cli,
-    inference,
     room_io,
     TurnHandlingOptions
 )
-from livekit.plugins import noise_cancellation, silero
+from livekit.plugins import deepgram, elevenlabs, google, noise_cancellation, silero
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
 logger = logging.getLogger("agent")
@@ -50,15 +49,15 @@ def _env_bool(name: str, default: bool) -> bool:
 
 
 AGENT_NAME = _env("LIVEKIT_AGENT_NAME", "my-agent") or "my-agent"
-DEEPGRAM_STT_MODEL = _env("DEEPGRAM_STT_MODEL", "deepgram/nova-3-general")
+DEEPGRAM_STT_MODEL = (_env("DEEPGRAM_STT_MODEL", "nova-3-general") or "").split("/")[-1] or "nova-3-general"
 DEEPGRAM_STT_LANGUAGE = _env("DEEPGRAM_STT_LANGUAGE", "en")
-GEMINI_LLM_MODEL = _env("GEMINI_LLM_MODEL", "google/gemini-2.5-flash-lite")
-ELEVENLABS_TTS_MODEL = _env(
-    "ELEVENLABS_TTS_MODEL",
-    "elevenlabs/eleven_multilingual_v2",
+GEMINI_LLM_MODEL = (_env("GEMINI_LLM_MODEL", "gemini-2.5-flash-lite") or "").split("/")[-1] or "gemini-2.5-flash-lite"
+ELEVENLABS_TTS_MODEL = (
+    (_env("ELEVENLABS_TTS_MODEL", "eleven_multilingual_v2") or "").split("/")[-1]
+    or "eleven_multilingual_v2"
 )
 ELEVENLABS_TTS_LANGUAGE = _env("ELEVENLABS_TTS_LANGUAGE", "en")
-ELEVENLABS_VOICE_ID = _env("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
+ELEVENLABS_VOICE_ID = _env("ELEVENLABS_VOICE_ID")
 PREEMPTIVE_GENERATION = _env_bool("PREEMPTIVE_GENERATION", True)
 
 
@@ -120,16 +119,16 @@ async def my_agent(ctx: JobContext):
     # staying on LiveKit Inference so we don't need lockfile changes here.
     session = AgentSession(
         # Speech-to-text (STT) is your agent's ears, turning the user's speech into text that the LLM can understand.
-        stt=inference.STT(
+        stt=deepgram.STT(
             model=DEEPGRAM_STT_MODEL,
             language=DEEPGRAM_STT_LANGUAGE,
         ),
         # A Large Language Model (LLM) is your agent's brain, processing user input and generating a response.
-        llm=inference.LLM(model=GEMINI_LLM_MODEL),
+        llm=google.LLM(model=GEMINI_LLM_MODEL),
         # Text-to-speech (TTS) is your agent's voice, turning the LLM's text into speech that the user can hear.
-        tts=inference.TTS(
+        tts=elevenlabs.TTS(
             model=ELEVENLABS_TTS_MODEL,
-            voice=ELEVENLABS_VOICE_ID,
+            voice_id=ELEVENLABS_VOICE_ID,
             language=ELEVENLABS_TTS_LANGUAGE,
         ),
         # VAD and turn detection are used to determine when the user is speaking and when the agent should respond.
