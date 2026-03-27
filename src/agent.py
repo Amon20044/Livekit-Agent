@@ -135,6 +135,7 @@ async def my_agent(ctx: JobContext):
         # VAD and turn detection are used to determine when the user is speaking and when the agent should respond.
         turn_handling=TurnHandlingOptions(
             turn_detection=MultilingualModel(),
+            interruption={"mode": "vad"},
         ),
         vad=ctx.proc.userdata["vad"],
         # Allow the LLM to generate a response while waiting for the end of turn.
