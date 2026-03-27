@@ -1,11 +1,34 @@
+import os
+from pathlib import Path
+
 import pytest
+from dotenv import load_dotenv
 from livekit.agents import AgentSession, inference, llm
 
 from agent import Assistant
 
+# Load environment from .env.local
+ENV_PATH = Path(__file__).resolve().parents[1] / ".env.local"
+load_dotenv(ENV_PATH)
+
+
+def _env(name: str, default: str | None = None) -> str | None:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+
+    cleaned = raw_value.strip().strip('"').strip("'")
+    if " #" in cleaned:
+        cleaned = cleaned.split(" #", 1)[0].strip()
+
+    return cleaned or default
+
+
+GEMINI_LLM_MODEL = _env("GEMINI_LLM_MODEL", "google/gemini-2.5-flash-lite")
+
 
 def _llm() -> llm.LLM:
-    return inference.LLM(model="openai/gpt-4.1-mini")
+    return inference.LLM(model=GEMINI_LLM_MODEL)
 
 
 @pytest.mark.asyncio
