@@ -44,10 +44,13 @@ jobs:
           test -n "${{ secrets.EC2_USER }}" || { echo "Missing secret: EC2_USER"; exit 1; }
           test -n "${{ secrets.EC2_PRIVATE_KEY }}" || { echo "Missing secret: EC2_PRIVATE_KEY"; exit 1; }
 
-      - name: Load SSH private key
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.EC2_PRIVATE_KEY }}
+      - name: Prepare SSH key
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf "%s\n" "${{ secrets.EC2_PRIVATE_KEY }}" > ~/.ssh/ec2_key
+          chmod 600 ~/.ssh/ec2_key
 
       - name: Add EC2 host to known_hosts
         shell: bash
@@ -71,14 +74,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          scp -P "${{ inputs.ssh_port }}" /tmp/my-agent.tar.gz "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/tmp/my-agent.tar.gz"
-          scp -P "${{ inputs.ssh_port }}" scripts/ec2/start_agent_worker.sh "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/tmp/start_agent_worker.sh"
+          scp -i ~/.ssh/ec2_key -o IdentitiesOnly=yes -P "${{ inputs.ssh_port }}" /tmp/my-agent.tar.gz "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/tmp/my-agent.tar.gz"
+          scp -i ~/.ssh/ec2_key -o IdentitiesOnly=yes -P "${{ inputs.ssh_port }}" scripts/ec2/start_agent_worker.sh "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/tmp/start_agent_worker.sh"
 
       - name: Deploy and start worker on EC2
         shell: bash
         run: |
           set -euo pipefail
-          ssh -p "${{ inputs.ssh_port }}" "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" "
+          ssh -i ~/.ssh/ec2_key -o IdentitiesOnly=yes -p "${{ inputs.ssh_port }}" "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" "
             set -euo pipefail
             chmod +x /tmp/start_agent_worker.sh
             sudo mkdir -p '${{ inputs.app_dir }}'
@@ -90,7 +93,7 @@ jobs:
         if: ${{ always() }}
         shell: bash
         run: |
-          ssh -p "${{ inputs.ssh_port }}" "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" "
+          ssh -i ~/.ssh/ec2_key -o IdentitiesOnly=yes -p "${{ inputs.ssh_port }}" "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" "
             set -euo pipefail
             if [ -f '${{ inputs.app_dir }}/logs/agent.log' ]; then
               tail -n 80 '${{ inputs.app_dir }}/logs/agent.log'

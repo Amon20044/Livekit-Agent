@@ -18,14 +18,29 @@ else
   SUDO=""
 fi
 
-if ! command -v git >/dev/null 2>&1; then
+if ! command -v git >/dev/null 2>&1 || ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
   if command -v apt-get >/dev/null 2>&1; then
     ${SUDO} apt-get update -y
-    ${SUDO} apt-get install -y git curl ca-certificates
+    if ! command -v git >/dev/null 2>&1; then
+      ${SUDO} apt-get install -y git ca-certificates
+    fi
+    if ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
+      ${SUDO} apt-get install -y wget
+    fi
   elif command -v dnf >/dev/null 2>&1; then
-    ${SUDO} dnf install -y git curl ca-certificates
+    if ! command -v git >/dev/null 2>&1; then
+      ${SUDO} dnf install -y git ca-certificates
+    fi
+    if ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
+      ${SUDO} dnf install -y wget
+    fi
   elif command -v yum >/dev/null 2>&1; then
-    ${SUDO} yum install -y git curl ca-certificates
+    if ! command -v git >/dev/null 2>&1; then
+      ${SUDO} yum install -y git ca-certificates
+    fi
+    if ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
+      ${SUDO} yum install -y wget
+    fi
   else
     echo "No supported package manager found (apt-get/dnf/yum)."
     exit 1
@@ -33,7 +48,14 @@ if ! command -v git >/dev/null 2>&1; then
 fi
 
 if ! command -v uv >/dev/null 2>&1; then
-  curl -LsSf https://astral.sh/uv/install.sh | sh
+  if command -v curl >/dev/null 2>&1; then
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO- https://astral.sh/uv/install.sh | sh
+  else
+    echo "Neither curl nor wget is available to install uv."
+    exit 1
+  fi
   export PATH="$HOME/.local/bin:$PATH"
 fi
 
