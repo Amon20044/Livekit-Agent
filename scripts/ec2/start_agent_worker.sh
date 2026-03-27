@@ -19,13 +19,32 @@ else
 fi
 
 if ! command -v git >/dev/null 2>&1; then
-  ${SUDO} apt-get update -y
-  ${SUDO} apt-get install -y git curl ca-certificates
+  if command -v apt-get >/dev/null 2>&1; then
+    ${SUDO} apt-get update -y
+    ${SUDO} apt-get install -y git curl ca-certificates
+  elif command -v dnf >/dev/null 2>&1; then
+    ${SUDO} dnf install -y git curl ca-certificates
+  elif command -v yum >/dev/null 2>&1; then
+    ${SUDO} yum install -y git curl ca-certificates
+  else
+    echo "No supported package manager found (apt-get/dnf/yum)."
+    exit 1
+  fi
 fi
 
 if ! command -v uv >/dev/null 2>&1; then
   curl -LsSf https://astral.sh/uv/install.sh | sh
   export PATH="$HOME/.local/bin:$PATH"
+fi
+
+if ! command -v uv >/dev/null 2>&1; then
+  # Common path when script runs in non-login shells.
+  export PATH="$HOME/.local/bin:$PATH"
+fi
+
+if ! command -v uv >/dev/null 2>&1; then
+  echo "uv installation failed or uv is not in PATH."
+  exit 1
 fi
 
 if [[ ! -d "$APP_DIR/.git" ]]; then
@@ -53,12 +72,19 @@ if [[ -f "$ENV_FILE" ]]; then
   set -a
   . "$ENV_FILE"
   set +a
+else
+  echo "Warning: env file not found at $ENV_FILE"
 fi
 
 cd "$APP_DIR"
 mkdir -p logs
 
-uv sync --locked
+if [[ -f "uv.lock" ]]; then
+  uv sync --locked
+else
+  echo "Warning: uv.lock not found; running 'uv sync' without --locked"
+  uv sync
+fi
 uv run python src/agent.py download-files
 
 pkill -f "src/agent.py start" || true
