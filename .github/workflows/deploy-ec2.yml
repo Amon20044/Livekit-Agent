@@ -9,7 +9,7 @@ on:
 env:
   APP_DIR: "/opt/my-agent"
   SSH_PORT: "22"
-  ENV_FILE: "/etc/my-agent.env"
+  ENV_FILE: "/opt/my-agent/.env.local"
 
 jobs:
   deploy:
@@ -71,6 +71,7 @@ jobs:
             chmod +x /tmp/start_agent_worker.sh
             sudo mkdir -p '${{ env.APP_DIR }}'
             sudo tar -xzf /tmp/my-agent.tar.gz -C '${{ env.APP_DIR }}'
+            sudo chown -R '${{ secrets.EC2_USER }}':'${{ secrets.EC2_USER }}' '${{ env.APP_DIR }}'
             APP_DIR='${{ env.APP_DIR }}' BRANCH='${{ github.ref_name }}' REPO_URL='' ENV_FILE='${{ env.ENV_FILE }}' /tmp/start_agent_worker.sh
           "
 
