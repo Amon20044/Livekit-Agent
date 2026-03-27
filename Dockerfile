@@ -73,6 +73,9 @@ RUN adduser \
 # This avoids expensive recursive chown and excludes build tools from the final image
 COPY --from=build --chown=appuser:appuser /app /app
 
+# Ensure the venv binaries and directories are traversable by appuser
+RUN chmod -R 755 /app/.venv
+
 WORKDIR /app
 
 # Switch to the non-privileged user for all subsequent operations
