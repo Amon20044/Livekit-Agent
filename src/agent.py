@@ -18,9 +18,10 @@ from livekit.agents import (
     cli,
     inference,
     room_io,
+    TurnHandlingOptions
 )
 from livekit.plugins import noise_cancellation, silero
-from livekit.plugins.turn_detector.english import EnglishModel
+from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
 logger = logging.getLogger("agent")
 
@@ -132,7 +133,9 @@ async def my_agent(ctx: JobContext):
             language=ELEVENLABS_TTS_LANGUAGE,
         ),
         # VAD and turn detection are used to determine when the user is speaking and when the agent should respond.
-        turn_detection=EnglishModel(),
+        turn_handling=TurnHandlingOptions(
+            turn_detection=MultilingualModel(),
+        ),
         vad=ctx.proc.userdata["vad"],
         # Allow the LLM to generate a response while waiting for the end of turn.
         preemptive_generation=PREEMPTIVE_GENERATION,
