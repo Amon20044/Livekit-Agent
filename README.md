@@ -154,6 +154,43 @@ Once you've started your own project based on this repo, you should:
 
 This project is production-ready and includes a working `Dockerfile`. To deploy it to LiveKit Cloud or another environment, see the [deploying to production](https://docs.livekit.io/deploy/agents/) guide.
 
+### Deploy to EC2 with GitHub Actions (manual)
+
+This repository includes a minimal manual workflow at `.github/workflows/deploy-ec2.yml` that deploys over SSH and starts the agent worker on your EC2 host.
+
+Before using it:
+
+- Ensure SSH access to the EC2 host from GitHub Actions runners.
+- Add these GitHub repository secrets:
+  - `EC2_HOST` (public IP or DNS)
+  - `EC2_USER` (for example `ec2-user`)
+  - `EC2_PRIVATE_KEY` (contents of your `.pem` key)
+- Create an env file on EC2 (default: `/etc/my-agent.env`) with:
+  - `LIVEKIT_URL`
+  - `LIVEKIT_API_KEY`
+  - `LIVEKIT_API_SECRET`
+
+How to run:
+
+1. Open **Actions** and run **Deploy Agent To EC2**.
+2. Optionally adjust `ref`, `app_dir`, `env_file`, and `ssh_port`.
+
+The workflow uploads the repo and executes `scripts/ec2/start_agent_worker.sh` over SSH, then prints recent worker logs.
+
+### Deploy from your machine with host/user/pem
+
+You can also deploy directly without GitHub Actions:
+
+```bash
+scripts/ec2/deploy_via_ssh.sh <ec2_host> <ec2_user> <pem_file>
+```
+
+Optional arguments:
+
+```bash
+scripts/ec2/deploy_via_ssh.sh <ec2_host> <ec2_user> <pem_file> [app_dir] [env_file] [ssh_port]
+```
+
 ## Self-hosted LiveKit
 
 You can also self-host LiveKit instead of using LiveKit Cloud. See the [self-hosting](https://docs.livekit.io/transport/self-hosting/local/) guide for more information. If you choose to self-host, you'll need to also use [model plugins](https://docs.livekit.io/agents/models/#plugins) instead of LiveKit Inference and will need to remove the [LiveKit Cloud noise cancellation](https://docs.livekit.io/transport/media/noise-cancellation/) plugin.

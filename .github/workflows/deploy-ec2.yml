@@ -1,0 +1,100 @@
+name: Deploy Agent To EC2
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref/branch to deploy"
+        required: true
+        default: "main"
+        type: string
+      app_dir:
+        description: "Target app directory on EC2"
+        required: true
+        default: "/opt/my-agent"
+        type: string
+      ssh_port:
+        description: "SSH port"
+        required: true
+        default: "22"
+        type: string
+      env_file:
+        description: "Environment file on EC2"
+        required: true
+        default: "/etc/my-agent.env"
+        type: string
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Validate required secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${{ secrets.EC2_HOST }}" || { echo "Missing secret: EC2_HOST"; exit 1; }
+          test -n "${{ secrets.EC2_USER }}" || { echo "Missing secret: EC2_USER"; exit 1; }
+          test -n "${{ secrets.EC2_PRIVATE_KEY }}" || { echo "Missing secret: EC2_PRIVATE_KEY"; exit 1; }
+
+      - name: Load SSH private key
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.EC2_PRIVATE_KEY }}
+
+      - name: Add EC2 host to known_hosts
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh-keyscan -p "${{ inputs.ssh_port }}" -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Package repository snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar \
+            --exclude-vcs \
+            --exclude='.venv' \
+            --exclude='__pycache__' \
+            --exclude='.ruff_cache' \
+            --exclude='.pytest_cache' \
+            -czf /tmp/my-agent.tar.gz .
+
+      - name: Upload app bundle and startup script
+        shell: bash
+        run: |
+          set -euo pipefail
+          scp -P "${{ inputs.ssh_port }}" /tmp/my-agent.tar.gz "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/tmp/my-agent.tar.gz"
+          scp -P "${{ inputs.ssh_port }}" scripts/ec2/start_agent_worker.sh "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/tmp/start_agent_worker.sh"
+
+      - name: Deploy and start worker on EC2
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -p "${{ inputs.ssh_port }}" "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" "
+            set -euo pipefail
+            chmod +x /tmp/start_agent_worker.sh
+            sudo mkdir -p '${{ inputs.app_dir }}'
+            sudo tar -xzf /tmp/my-agent.tar.gz -C '${{ inputs.app_dir }}'
+            APP_DIR='${{ inputs.app_dir }}' BRANCH='${{ inputs.ref }}' REPO_URL='' ENV_FILE='${{ inputs.env_file }}' /tmp/start_agent_worker.sh
+          "
+
+      - name: Show last logs
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          ssh -p "${{ inputs.ssh_port }}" "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" "
+            set -euo pipefail
+            if [ -f '${{ inputs.app_dir }}/logs/agent.log' ]; then
+              tail -n 80 '${{ inputs.app_dir }}/logs/agent.log'
+            else
+              echo 'No agent log file found yet.'
+            fi
+          "
