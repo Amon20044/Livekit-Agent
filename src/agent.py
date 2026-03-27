@@ -4,10 +4,15 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from livekit import rtc
+
+# BGM
 from livekit.agents import (
     Agent,
     AgentServer,
     AgentSession,
+    AudioConfig,
+    BackgroundAudioPlayer,
+    BuiltinAudioClip,
     JobContext,
     JobProcess,
     cli,
@@ -16,8 +21,6 @@ from livekit.agents import (
 )
 from livekit.plugins import noise_cancellation, silero
 from livekit.plugins.turn_detector.english import EnglishModel
-# BGM
-from livekit.agents import BackgroundAudioPlayer, AudioConfig, BuiltinAudioClip
 
 logger = logging.getLogger("agent")
 
@@ -179,9 +182,9 @@ async def my_agent(ctx: JobContext):
             #     AudioConfig(BuiltinAudioClip.KEYBOARD_TYPING2, volume=0.6),
             # ],
         )
-    
+
     await background_audio.start(room=ctx.room, agent_session=session)
-    
+
     # Join the room and connect to the user
     await ctx.connect()
 
