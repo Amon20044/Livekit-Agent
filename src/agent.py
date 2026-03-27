@@ -175,7 +175,7 @@ async def my_agent(ctx: JobContext):
     background_audio = BackgroundAudioPlayer(
         # play office ambience sound looping in the background
         ambient_sound=AudioConfig(BuiltinAudioClip.OFFICE_AMBIENCE, volume=0.6),
-        # # play keyboard typing sound when the agent is thinking
+        # # play keyboard typing sound when the agent is thinking, here you can also use your own custom thinking sound by providing a list of file paths to different audio clips for variety
         # thinking_sound=[
         #     AudioConfig(BuiltinAudioClip.KEYBOARD_TYPING, volume=0.6),
         #     AudioConfig(BuiltinAudioClip.KEYBOARD_TYPING2, volume=0.6),
