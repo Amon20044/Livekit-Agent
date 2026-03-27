@@ -3,13 +3,24 @@ name: Deploy Agent To EC2
 on:
   push:
     branches: [main]
-    paths:
-      - ".github/workflows/deploy-ec2.yml"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch or SHA to deploy"
+        default: "main"
+      env_file:
+        description: "Path to env file on EC2"
+        default: "/opt/my-agent/.env.local"
+      ssh_port:
+        description: "SSH port"
+        default: "22"
 
 env:
   APP_DIR: "/opt/my-agent"
-  SSH_PORT: "22"
-  ENV_FILE: "/opt/my-agent/.env.local"
+  SSH_PORT: ${{ inputs.ssh_port || '22' }}
+  ENV_FILE: ${{ inputs.env_file || '/opt/my-agent/.env.local' }}
+  IMAGE_NAME: "my-agent"
+  CONTAINER_NAME: "my-agent"
 
 jobs:
   deploy:
@@ -20,6 +31,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
 
       - name: Validate required secrets
         shell: bash
@@ -55,24 +68,48 @@ jobs:
             --exclude='.pytest_cache' \
             -czf /tmp/my-agent.tar.gz .
 
-      - name: Upload app bundle and startup script
+      - name: Upload app bundle
         shell: bash
         run: |
           set -euo pipefail
-          scp -i ~/.ssh/ec2_key -o IdentitiesOnly=yes -P "${{ env.SSH_PORT }}" /tmp/my-agent.tar.gz "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/tmp/my-agent.tar.gz"
-          scp -i ~/.ssh/ec2_key -o IdentitiesOnly=yes -P "${{ env.SSH_PORT }}" scripts/ec2/start_agent_worker.sh "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/tmp/start_agent_worker.sh"
+          scp -i ~/.ssh/ec2_key -o IdentitiesOnly=yes -P "${{ env.SSH_PORT }}" \
+            /tmp/my-agent.tar.gz "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/tmp/my-agent.tar.gz"
 
-      - name: Deploy and start worker on EC2
+      - name: Build Docker image and start container on EC2
         shell: bash
         run: |
           set -euo pipefail
           ssh -i ~/.ssh/ec2_key -o IdentitiesOnly=yes -p "${{ env.SSH_PORT }}" "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" "
             set -euo pipefail
-            chmod +x /tmp/start_agent_worker.sh
+
+            # Install Docker if not present
+            if ! command -v docker >/dev/null 2>&1; then
+              sudo dnf install -y docker
+              sudo systemctl enable docker
+            fi
+            sudo systemctl start docker
+
+            # Extract code
             sudo mkdir -p '${{ env.APP_DIR }}'
             sudo tar -xzf /tmp/my-agent.tar.gz -C '${{ env.APP_DIR }}'
             sudo chown -R '${{ secrets.EC2_USER }}':'${{ secrets.EC2_USER }}' '${{ env.APP_DIR }}'
-            APP_DIR='${{ env.APP_DIR }}' BRANCH='${{ github.ref_name }}' REPO_URL='' ENV_FILE='${{ env.ENV_FILE }}' /tmp/start_agent_worker.sh
+
+            cd '${{ env.APP_DIR }}'
+
+            # Build image from Dockerfile
+            sudo docker build -t '${{ env.IMAGE_NAME }}' .
+
+            # Replace running container with the new image
+            sudo docker stop '${{ env.CONTAINER_NAME }}' 2>/dev/null || true
+            sudo docker rm '${{ env.CONTAINER_NAME }}' 2>/dev/null || true
+            sudo docker run -d \
+              --name '${{ env.CONTAINER_NAME }}' \
+              --env-file '${{ env.ENV_FILE }}' \
+              --restart unless-stopped \
+              '${{ env.IMAGE_NAME }}'
+
+            echo 'Container started.'
+            sudo docker ps --filter name='${{ env.CONTAINER_NAME }}'
           "
 
       - name: Show last logs
@@ -80,10 +117,5 @@ jobs:
         shell: bash
         run: |
           ssh -i ~/.ssh/ec2_key -o IdentitiesOnly=yes -p "${{ env.SSH_PORT }}" "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" "
-            set -euo pipefail
-            if [ -f '${{ env.APP_DIR }}/logs/agent.log' ]; then
-              tail -n 80 '${{ env.APP_DIR }}/logs/agent.log'
-            else
-              echo 'No agent log file found yet.'
-            fi
+            sudo docker logs --tail 80 '${{ env.CONTAINER_NAME }}' 2>/dev/null || echo 'No container logs yet.'
           "
