@@ -112,36 +112,13 @@ jobs:
             # --- Build agent image (no cache) ---
             sudo docker build --no-cache -t '${{ env.IMAGE_NAME }}' .
 
-            # --- Find the Docker network where livekit is running ---
-            LIVEKIT_CID=\$(sudo docker ps -qf name=livekit | head -1)
-            if [ -n \"\$LIVEKIT_CID\" ]; then
-              LIVEKIT_NET=\$(sudo docker inspect \"\$LIVEKIT_CID\" --format '{{range \$k, \$v := .NetworkSettings.Networks}}{{\$k}}{{end}}' 2>/dev/null | head -1)
-            fi
-            if [ -z \"\${LIVEKIT_NET:-}\" ]; then
-              echo 'ERROR: No livekit container found. Cannot resolve ws://livekit:7880 without it.'
-              sudo docker ps -a
-              exit 1
-            fi
-            echo \"Joining network: \$LIVEKIT_NET\"
-
-            # --- Run agent container on the same network as livekit ---
+            # --- Start agent container ---
             sudo docker run -d \
               --name '${{ env.CONTAINER_NAME }}' \
-              --network \"\$LIVEKIT_NET\" \
+              --network host \
               --env-file '${{ env.ENV_FILE }}' \
               --restart unless-stopped \
               '${{ env.IMAGE_NAME }}'
-
-            # --- Verify networking inside the container ---
-            echo '=== Verifying agent can reach livekit ==='
-            sleep 3
-            sudo docker exec '${{ env.CONTAINER_NAME }}' python3 -c \"import socket; addr=socket.gethostbyname('livekit'); print('DNS OK: livekit ->', addr)\" \
-              || { echo 'FAIL: livekit hostname does not resolve inside container'; exit 1; }
-            sudo docker exec '${{ env.CONTAINER_NAME }}' python3 -c \"import socket; s=socket.socket(); s.settimeout(3); s.connect(('livekit',7880)); s.close(); print('TCP OK: livekit:7880 reachable')\" \
-              || { echo 'FAIL: cannot connect to livekit:7880'; exit 1; }
-
-            echo '=== Agent deployed ==='
-            sudo docker ps --filter name='${{ env.CONTAINER_NAME }}'
           "
 
       - name: Wait for agent to register
