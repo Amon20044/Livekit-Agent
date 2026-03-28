@@ -111,10 +111,10 @@ async def entrypoint(ctx: JobContext):
 
     background_audio = BackgroundAudioPlayer(
         ambient_sound=AudioConfig(BuiltinAudioClip.OFFICE_AMBIENCE, volume=0.6),
-        thinking_sound=[
-            AudioConfig(BuiltinAudioClip.KEYBOARD_TYPING, volume=0.6),
-            AudioConfig(BuiltinAudioClip.KEYBOARD_TYPING2, volume=0.6),
-        ],
+        # thinking_sound=[
+        #     AudioConfig(BuiltinAudioClip.KEYBOARD_TYPING, volume=0.6),
+        #     AudioConfig(BuiltinAudioClip.KEYBOARD_TYPING2, volume=0.6),
+        # ],
     )
     await background_audio.start(room=ctx.room, agent_session=session)
 
