@@ -70,9 +70,10 @@ jobs:
 
       - name: Upload app bundle
         shell: bash
+        timeout-minutes: 3
         run: |
           set -euo pipefail
-          scp -i ~/.ssh/ec2_key -o IdentitiesOnly=yes -P "${{ env.SSH_PORT }}" \
+          scp -i ~/.ssh/ec2_key -o IdentitiesOnly=yes -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -C -P "${{ env.SSH_PORT }}" \
             /tmp/my-agent.tar.gz "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/tmp/my-agent.tar.gz"
 
       - name: Deploy agent on EC2
