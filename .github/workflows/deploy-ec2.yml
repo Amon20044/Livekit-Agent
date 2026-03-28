@@ -23,7 +23,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
 
     steps:
       - name: Checkout
@@ -45,9 +45,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Package only what Docker needs: Dockerfile, src/, pyproject.toml, uv.lock
+          # Package only what Docker needs + env if present
           tar -czf /tmp/my-agent.tar.gz \
-            Dockerfile .dockerignore pyproject.toml uv.lock src/
+            Dockerfile .dockerignore pyproject.toml uv.lock src/ \
+            $([ -f .env.encoded ] && echo ".env.encoded" || true)
 
           # Single SSH session: upload, build, run
           SSH="ssh -i ~/.ssh/ec2_key -o IdentitiesOnly=yes -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -p ${{ env.SSH_PORT }}"
@@ -67,23 +68,18 @@ jobs:
             sudo docker image prune -f 2>/dev/null || true
             sudo docker builder prune -af 2>/dev/null || true
 
-            # Clean old code, preserve env
-            if [ -f '${{ env.ENV_FILE }}' ]; then cp '${{ env.ENV_FILE }}' /tmp/my-agent-env.bak; fi
+            # Clean old code
             sudo rm -rf '${{ env.APP_DIR }}'
             sudo mkdir -p '${{ env.APP_DIR }}'
             sudo tar -xzf /tmp/my-agent.tar.gz -C '${{ env.APP_DIR }}'
             sudo chown -R '${{ secrets.EC2_USER }}':'${{ secrets.EC2_USER }}' '${{ env.APP_DIR }}'
-            if [ -f /tmp/my-agent-env.bak ]; then sudo mv /tmp/my-agent-env.bak '${{ env.ENV_FILE }}'; fi
             rm -f /tmp/my-agent.tar.gz
 
-            # Set LiveKit connection
-            touch '${{ env.ENV_FILE }}'
-            sed -i '/^LIVEKIT_URL=/d' '${{ env.ENV_FILE }}'
-            sed -i '/^LIVEKIT_API_KEY=/d' '${{ env.ENV_FILE }}'
-            sed -i '/^LIVEKIT_API_SECRET=/d' '${{ env.ENV_FILE }}'
-            echo 'LIVEKIT_URL=ws://localhost:7880' >> '${{ env.ENV_FILE }}'
-            echo 'LIVEKIT_API_KEY=${{ secrets.LIVEKIT_API_KEY }}' >> '${{ env.ENV_FILE }}'
-            echo 'LIVEKIT_API_SECRET=${{ secrets.LIVEKIT_API_SECRET }}' >> '${{ env.ENV_FILE }}'
+            # Decode env file if .env.encoded was included, otherwise keep existing
+            if [ -f '${{ env.APP_DIR }}/.env.encoded' ]; then
+              base64 -d '${{ env.APP_DIR }}/.env.encoded' > '${{ env.ENV_FILE }}'
+              rm -f '${{ env.APP_DIR }}/.env.encoded'
+            fi
 
             # Build and run
             cd '${{ env.APP_DIR }}'
@@ -155,4 +151,16 @@ jobs:
 
           if [ "$RESULT" != "SUCCESS" ]; then
             exit 1
+          fi
+
+      - name: Remove .env.encoded from repo
+        if: always()
+        shell: bash
+        run: |
+          if [ -f .env.encoded ]; then
+            git config user.name "github-actions"
+            git config user.email "github-actions@github.com"
+            git rm .env.encoded
+            git commit -m "chore: remove .env.encoded after deploy [skip ci]"
+            git push
           fi
