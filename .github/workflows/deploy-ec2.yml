@@ -127,26 +127,36 @@ jobs:
             sudo docker system prune -af --volumes 2>/dev/null || true
             sudo docker network prune -f 2>/dev/null || true
 
-            # --- Stop any host-level livekit service and kill processes on LiveKit ports ---
-            echo '=== Stopping host-level livekit services ==='
-            sudo systemctl stop livekit 2>/dev/null || true
-            sudo systemctl stop livekit-server 2>/dev/null || true
-            sudo systemctl disable livekit 2>/dev/null || true
-            sudo systemctl disable livekit-server 2>/dev/null || true
-            sudo pkill -f livekit-server 2>/dev/null || true
-            sudo pkill -f livekit 2>/dev/null || true
+            # --- Stop ALL host-level services that could hold LiveKit ports ---
+            echo '=== Stopping host-level services ==='
+            # Stop any livekit or caddy systemd services
+            for svc in livekit livekit-server caddy caddyl4; do
+              sudo systemctl stop \$svc 2>/dev/null || true
+              sudo systemctl disable \$svc 2>/dev/null || true
+            done
+            # Kill any livekit/caddy processes running outside Docker
+            sudo pkill -9 -f livekit-server 2>/dev/null || true
+            sudo pkill -9 -f livekit 2>/dev/null || true
+            sudo pkill -9 -f caddy 2>/dev/null || true
+            # Also kill any lingering docker-proxy on these ports
+            sudo pkill -9 -f docker-proxy 2>/dev/null || true
+
+            # Install fuser (psmisc) for reliable port killing
+            sudo dnf install -y psmisc 2>/dev/null || sudo yum install -y psmisc 2>/dev/null || true
 
             echo '=== Freeing LiveKit ports (7880, 7881) ==='
+            sudo fuser -k 7880/tcp 2>/dev/null || true
+            sudo fuser -k 7881/tcp 2>/dev/null || true
+            # Fallback: parse ss output without Perl regex
             for port in 7880 7881; do
-              pid=\$(sudo ss -tlnp sport = :\$port | grep -oP 'pid=\K[0-9]+' | head -1)
-              if [ -n \"\$pid\" ]; then
+              sudo ss -tlnp | grep \":\$port \" | grep -o 'pid=[0-9]*' | grep -o '[0-9]*' | while read pid; do
                 echo \"Killing PID \$pid on port \$port\"
                 sudo kill -9 \$pid 2>/dev/null || true
-              fi
+              done
             done
-            sleep 2
+            sleep 3
             echo '=== Verifying ports are free ==='
-            sudo ss -tlnp sport = :7880 sport = :7881 || true
+            sudo ss -tlnp | grep -E ':7880|:7881' || echo 'Ports 7880/7881 are free'
 
             # --- Wipe old app directory completely ---
             echo '=== Removing old app directory ==='
@@ -187,6 +197,11 @@ jobs:
             echo 'LIVEKIT_URL=ws://livekit:7880' >> '${{ env.ENV_FILE }}'
             echo 'LIVEKIT_API_KEY=${{ secrets.LIVEKIT_API_KEY }}' >> '${{ env.ENV_FILE }}'
             echo 'LIVEKIT_API_SECRET=${{ secrets.LIVEKIT_API_SECRET }}' >> '${{ env.ENV_FILE }}'
+
+            # Final safety: kill anything that grabbed ports between SSH calls
+            sudo fuser -k 7880/tcp 2>/dev/null || true
+            sudo fuser -k 7881/tcp 2>/dev/null || true
+            sleep 1
 
             # Build and start all services (livekit, redis, agent) via compose
             sudo docker compose -f docker-compose.local.yaml build --no-cache
