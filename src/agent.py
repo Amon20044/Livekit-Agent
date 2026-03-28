@@ -3,8 +3,6 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
-from livekit import rtc
-
 from livekit.agents import (
     Agent,
     AgentServer,
@@ -15,10 +13,9 @@ from livekit.agents import (
     JobContext,
     JobProcess,
     cli,
-    room_io,
     TurnHandlingOptions
 )
-from livekit.plugins import deepgram, elevenlabs, google, noise_cancellation, silero
+from livekit.plugins import deepgram, elevenlabs, google, silero
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
 logger = logging.getLogger("agent")
