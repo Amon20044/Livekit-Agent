@@ -90,9 +90,8 @@ jobs:
 
             # Install/upgrade docker-buildx plugin (compose build requires buildx >= 0.17.0)
             sudo mkdir -p /usr/local/lib/docker/cli-plugins
-            sudo curl -SL https://github.com/docker/buildx/releases/latest/download/buildx-v0.22.0.linux-\$(uname -m) \
-              -o /usr/local/lib/docker/cli-plugins/docker-buildx 2>/dev/null || \
-            sudo curl -SL https://github.com/docker/buildx/releases/download/v0.22.0/buildx-v0.22.0.linux-\$(uname -m) \
+            ARCH=\$(uname -m); case \$ARCH in x86_64) ARCH=amd64;; aarch64) ARCH=arm64;; esac
+            sudo curl -fSL https://github.com/docker/buildx/releases/download/v0.22.0/buildx-v0.22.0.linux-\$ARCH \
               -o /usr/local/lib/docker/cli-plugins/docker-buildx
             sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx
 
