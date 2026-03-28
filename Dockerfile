@@ -69,29 +69,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
   && rm -rf /var/lib/apt/lists/*
 
-# Create a non-privileged user that the app will run under.
-# See https://docs.docker.com/build/building/best-practices/#user
-ARG UID=10001
-RUN adduser \
-    --disabled-password \
-    --gecos "" \
-    --home "/app" \
-    --shell "/sbin/nologin" \
-    --uid "${UID}" \
-    appuser
-
-# Copy the application and virtual environment with correct ownership in a single layer
-# This avoids expensive recursive chown and excludes build tools from the final image
-COPY --from=build --chown=appuser:appuser /app /app
-
-# Ensure the venv binaries and directories are traversable by appuser
-RUN chmod -R 755 /app/.venv
+# Copy the application and virtual environment from the build stage
+COPY --from=build /app /app
 
 WORKDIR /app
-
-# Switch to the non-privileged user for all subsequent operations
-# This improves security by not running as root
-USER appuser
 
 # Run the AgentServer using UV
 # UV will activate the virtual environment and run the agent.
