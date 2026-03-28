@@ -6,6 +6,7 @@ if [[ $# -lt 3 ]]; then
   exit 1
 fi
 
+
 EC2_HOST="$1"
 EC2_USER="$2"
 PEM_FILE="$3"
