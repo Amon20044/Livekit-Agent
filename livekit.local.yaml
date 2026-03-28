@@ -10,4 +10,4 @@ rtc:
 redis:
     address: redis:6379
 keys:
-    API6bn6ANPMRbsu: nOnJ5qLKlfRS3pe2FgfPwbec0xzElI4N4MjY5zVkXRtB
+    APIFmXGKZsHWkcA: dP5KujdtOXxTKXU4E5ko56t22gvGfoqk5DXcZOkuafE
