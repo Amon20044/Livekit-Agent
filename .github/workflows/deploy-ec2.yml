@@ -8,9 +8,6 @@ on:
       ref:
         description: "Branch or SHA to deploy"
         default: "main"
-      env_file:
-        description: "Path to env file on EC2"
-        default: "/opt/my-agent/.env.local"
       ssh_port:
         description: "SSH port"
         default: "22"
@@ -18,7 +15,7 @@ on:
 env:
   APP_DIR: "/opt/my-agent"
   SSH_PORT: ${{ inputs.ssh_port || '22' }}
-  ENV_FILE: ${{ inputs.env_file || '/opt/my-agent/.env.local' }}
+  ENV_FILE: "/opt/my-agent/.env.local"
   IMAGE_NAME: "my-agent"
   CONTAINER_NAME: "my-agent"
 
@@ -34,85 +31,59 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.ref }}
 
-      - name: Validate required secrets
+      - name: Setup SSH
         shell: bash
         run: |
-          set -euo pipefail
-          test -n "${{ secrets.EC2_HOST }}" || { echo "Missing secret: EC2_HOST"; exit 1; }
-          test -n "${{ secrets.EC2_USER }}" || { echo "Missing secret: EC2_USER"; exit 1; }
-          test -n "${{ secrets.EC2_PRIVATE_KEY }}" || { echo "Missing secret: EC2_PRIVATE_KEY"; exit 1; }
-
-      - name: Prepare SSH key
-        shell: bash
-        run: |
-          set -euo pipefail
           install -m 700 -d ~/.ssh
           printf "%s\n" "${{ secrets.EC2_PRIVATE_KEY }}" > ~/.ssh/ec2_key
           chmod 600 ~/.ssh/ec2_key
-
-      - name: Add EC2 host to known_hosts
-        shell: bash
-        run: |
           ssh-keyscan -p "${{ env.SSH_PORT }}" -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
 
-      - name: Package repository snapshot
+      - name: Deploy
         shell: bash
+        timeout-minutes: 10
         run: |
           set -euo pipefail
-          tar \
-            --exclude-vcs \
-            --exclude='.venv' \
-            --exclude='__pycache__' \
-            --exclude='.ruff_cache' \
-            --exclude='.pytest_cache' \
-            --exclude='.cache' \
-            -czf /tmp/my-agent.tar.gz .
 
-      - name: Upload app bundle
-        shell: bash
-        timeout-minutes: 3
-        run: |
-          set -euo pipefail
-          scp -i ~/.ssh/ec2_key -o IdentitiesOnly=yes -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -C -P "${{ env.SSH_PORT }}" \
-            /tmp/my-agent.tar.gz "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/tmp/my-agent.tar.gz"
+          # Package only what Docker needs: Dockerfile, src/, pyproject.toml, uv.lock
+          tar -czf /tmp/my-agent.tar.gz \
+            Dockerfile .dockerignore pyproject.toml uv.lock src/
 
-      - name: Deploy agent on EC2
-        shell: bash
-        run: |
-          set -euo pipefail
-          ssh -i ~/.ssh/ec2_key -o IdentitiesOnly=yes -p "${{ env.SSH_PORT }}" "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" "
+          # Single SSH session: upload, build, run
+          SSH="ssh -i ~/.ssh/ec2_key -o IdentitiesOnly=yes -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -p ${{ env.SSH_PORT }}"
+          SCP="scp -i ~/.ssh/ec2_key -o IdentitiesOnly=yes -o ConnectTimeout=15 -C -P ${{ env.SSH_PORT }}"
+
+          $SCP /tmp/my-agent.tar.gz "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/tmp/my-agent.tar.gz"
+
+          $SSH "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" "
             set -euo pipefail
 
-            # --- Only remove the agent container and its image ---
-            echo '=== Removing old agent container ==='
+            # Stop old agent
             sudo docker stop '${{ env.CONTAINER_NAME }}' 2>/dev/null || true
             sudo docker rm -f '${{ env.CONTAINER_NAME }}' 2>/dev/null || true
+
+            # Free memory: remove old image + dangling stuff
             sudo docker rmi -f '${{ env.IMAGE_NAME }}' 2>/dev/null || true
+            sudo docker image prune -f 2>/dev/null || true
             sudo docker builder prune -af 2>/dev/null || true
 
-            # --- Fresh code ---
-            if [ -f '${{ env.ENV_FILE }}' ]; then
-              cp '${{ env.ENV_FILE }}' /tmp/my-agent-env.bak
-            fi
+            # Clean old code, preserve env
+            if [ -f '${{ env.ENV_FILE }}' ]; then cp '${{ env.ENV_FILE }}' /tmp/my-agent-env.bak; fi
             sudo rm -rf '${{ env.APP_DIR }}'
             sudo mkdir -p '${{ env.APP_DIR }}'
             sudo tar -xzf /tmp/my-agent.tar.gz -C '${{ env.APP_DIR }}'
             sudo chown -R '${{ secrets.EC2_USER }}':'${{ secrets.EC2_USER }}' '${{ env.APP_DIR }}'
-            if [ -f /tmp/my-agent-env.bak ]; then
-              sudo mv /tmp/my-agent-env.bak '${{ env.ENV_FILE }}'
-            fi
+            if [ -f /tmp/my-agent-env.bak ]; then sudo mv /tmp/my-agent-env.bak '${{ env.ENV_FILE }}'; fi
+            rm -f /tmp/my-agent.tar.gz
 
-            cd '${{ env.APP_DIR }}'
-
-            # --- Ensure LIVEKIT_URL points to internal Docker network ---
+            # Set LIVEKIT_URL
             touch '${{ env.ENV_FILE }}'
             sed -i '/^LIVEKIT_URL=/d' '${{ env.ENV_FILE }}'
             echo 'LIVEKIT_URL=ws://localhost:7880' >> '${{ env.ENV_FILE }}'
 
-            # --- Build agent image (no cache) ---
+            # Build and run
+            cd '${{ env.APP_DIR }}'
             sudo docker build --no-cache -t '${{ env.IMAGE_NAME }}' .
-
-            # --- Start agent container ---
             sudo docker run -d \
               --name '${{ env.CONTAINER_NAME }}' \
               --network host \
@@ -123,17 +94,17 @@ jobs:
 
       - name: Wait for agent to register
         shell: bash
+        timeout-minutes: 3
         run: |
-          set -euo pipefail
+          SSH="ssh -i ~/.ssh/ec2_key -o IdentitiesOnly=yes -o ServerAliveInterval=10 -p ${{ env.SSH_PORT }}"
           RESULT="FAIL"
-          echo "Waiting for agent to register with LiveKit..."
           for i in $(seq 1 30); do
-            if ssh -i ~/.ssh/ec2_key -o IdentitiesOnly=yes -p "${{ env.SSH_PORT }}" "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" \
+            if $SSH "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" \
               "sudo docker logs '${{ env.CONTAINER_NAME }}' 2>&1 | grep -q 'registered worker'"; then
               RESULT="SUCCESS"
               break
             fi
-            echo "Attempt $i/30 - not yet registered, waiting 5s..."
+            echo "Attempt $i/30 - waiting 5s..."
             sleep 5
           done
 
@@ -142,16 +113,9 @@ jobs:
           echo "  DEPLOY RESULT: $RESULT"
           echo "========================================="
           echo ""
-          echo "=== Container logs ==="
-          ssh -i ~/.ssh/ec2_key -o IdentitiesOnly=yes -p "${{ env.SSH_PORT }}" "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" \
-            "sudo docker logs --tail 80 '${{ env.CONTAINER_NAME }}' 2>&1" || true
-          echo ""
-          echo "=== Container status ==="
-          ssh -i ~/.ssh/ec2_key -o IdentitiesOnly=yes -p "${{ env.SSH_PORT }}" "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" \
-            "sudo docker ps -a --filter name='${{ env.CONTAINER_NAME }}'" || true
+          $SSH "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" \
+            "sudo docker logs --tail 40 '${{ env.CONTAINER_NAME }}' 2>&1" || true
 
           if [ "$RESULT" = "FAIL" ]; then
-            echo ""
-            echo "Agent did not register within 150s."
             exit 1
           fi
