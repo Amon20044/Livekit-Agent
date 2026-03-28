@@ -107,7 +107,7 @@ jobs:
             # --- Ensure LIVEKIT_URL points to internal Docker network ---
             touch '${{ env.ENV_FILE }}'
             sed -i '/^LIVEKIT_URL=/d' '${{ env.ENV_FILE }}'
-            echo 'LIVEKIT_URL=ws://livekit:7880' >> '${{ env.ENV_FILE }}'
+            echo 'LIVEKIT_URL=ws://localhost:7880' >> '${{ env.ENV_FILE }}'
 
             # --- Build agent image (no cache) ---
             sudo docker build --no-cache -t '${{ env.IMAGE_NAME }}' .
