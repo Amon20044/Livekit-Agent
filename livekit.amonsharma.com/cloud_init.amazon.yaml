@@ -18,7 +18,7 @@ write_files:
         port_range_start: 50000
         port_range_end: 60000
         use_external_ip: true
-        enable_loopback_candidate: false
+        enable_loopback_candidate: true
       redis:
         address: localhost:6379
         username: ""
