@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Encodes .env.local -> .env.encoded, stages everything, commits with a
-# summary of changes, and pushes.
+# Encodes .env.local and uploads it as a GitHub secret, then stages, commits,
+# and pushes code changes. The CI workflow decodes the secret on the server.
 # Usage: ./scripts/push-env.sh [path-to-env-file]
 
 ENV_FILE="${1:-.env.local}"
@@ -12,8 +12,16 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 1
 fi
 
-# Encode env
-base64 -w 0 "$ENV_FILE" > .env.encoded 2>/dev/null || base64 -i "$ENV_FILE" | tr -d '\n' > .env.encoded
+# Read ENV_LOCAL_B64 from the env file itself
+ENV_LOCAL_B64=$(grep -m1 '^ENV_LOCAL_B64=' "$ENV_FILE" | cut -d'=' -f2-)
+if [[ -z "$ENV_LOCAL_B64" ]]; then
+  echo "Error: ENV_LOCAL_B64 not found in $ENV_FILE"
+  exit 1
+fi
+export ENV_LOCAL_B64
+openssl enc -aes-256-cbc -pbkdf2 -a -in "$ENV_FILE" -out .env.encoded -pass env:ENV_LOCAL_B64
+git add .env.encoded
+echo "Encrypted $ENV_FILE to .env.encoded."
 
 # Stage all changes
 git add -A

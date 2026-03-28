@@ -23,7 +23,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
 
     steps:
       - name: Checkout
@@ -75,9 +75,12 @@ jobs:
             sudo chown -R '${{ secrets.EC2_USER }}':'${{ secrets.EC2_USER }}' '${{ env.APP_DIR }}'
             rm -f /tmp/my-agent.tar.gz
 
-            # Decode env file if .env.encoded was included, otherwise keep existing
+            # Decrypt env file if .env.encoded was included, otherwise keep existing
             if [ -f '${{ env.APP_DIR }}/.env.encoded' ]; then
-              base64 -d '${{ env.APP_DIR }}/.env.encoded' > '${{ env.ENV_FILE }}'
+              openssl enc -aes-256-cbc -pbkdf2 -a -d \
+                -in '${{ env.APP_DIR }}/.env.encoded' \
+                -out '${{ env.ENV_FILE }}' \
+                -pass pass:'${{ secrets.ENV_LOCAL_B64 }}'
               rm -f '${{ env.APP_DIR }}/.env.encoded'
             fi
 
@@ -153,14 +156,3 @@ jobs:
             exit 1
           fi
 
-      - name: Remove .env.encoded from repo
-        if: always()
-        shell: bash
-        run: |
-          if [ -f .env.encoded ]; then
-            git config user.name "github-actions"
-            git config user.email "github-actions@github.com"
-            git rm .env.encoded
-            git commit -m "chore: remove .env.encoded after deploy [skip ci]"
-            git push
-          fi
