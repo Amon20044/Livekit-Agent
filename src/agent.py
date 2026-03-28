@@ -3,59 +3,46 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
+from livekit import agents
 from livekit.agents import (
     Agent,
-    AgentServer,
     AgentSession,
     AudioConfig,
     BackgroundAudioPlayer,
     BuiltinAudioClip,
     JobContext,
     JobProcess,
+    MetricsCollectedEvent,
+    RoomInputOptions,
+    TurnHandlingOptions,
+    WorkerOptions,
     cli,
-    TurnHandlingOptions
+    metrics,
 )
-from livekit.plugins import deepgram, elevenlabs, google, silero
-from livekit.plugins.turn_detector.multilingual import MultilingualModel
+from livekit.plugins import silero, elevenlabs, google, deepgram, noise_cancellation
+from livekit.plugins.turn_detector.english import EnglishModel
+from welcome_agent import WelcomeAgent, HealthcareSessionData
 
 logger = logging.getLogger("agent")
 
+env_file_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env.local")
+load_dotenv(env_file_path)
 
-ENV_PATH = Path(__file__).resolve().parents[1] / ".env.local"
-load_dotenv(ENV_PATH)
+# LiveKit connection
+LIVEKIT_URL = os.getenv("LIVEKIT_URL", "ws://localhost:7880")
+LIVEKIT_API_KEY = os.getenv("LIVEKIT_API_KEY")
+LIVEKIT_API_SECRET = os.getenv("LIVEKIT_API_SECRET")
+AGENT_NAME = os.getenv("LIVEKIT_AGENT_NAME", "my-agent")
 
+# Provider API keys
+deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
+google_api_key = os.getenv("GOOGLE_API_KEY")
+elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY") or os.getenv("ELEVEN_API_KEY")
 
-def _env(name: str, default: str | None = None) -> str | None:
-    raw_value = os.getenv(name)
-    if raw_value is None:
-        return default
-
-    cleaned = raw_value.strip().strip('"').strip("'")
-    if " #" in cleaned:
-        cleaned = cleaned.split(" #", 1)[0].strip()
-
-    return cleaned or default
-
-
-def _env_bool(name: str, default: bool) -> bool:
-    raw_value = _env(name)
-    if raw_value is None:
-        return default
-
-    return raw_value.lower() in {"1", "true", "yes", "on"}
-
-
-AGENT_NAME = _env("LIVEKIT_AGENT_NAME", "my-agent") or "my-agent"
-DEEPGRAM_STT_MODEL = (_env("DEEPGRAM_STT_MODEL", "nova-3-general") or "").split("/")[-1] or "nova-3-general"
-DEEPGRAM_STT_LANGUAGE = _env("DEEPGRAM_STT_LANGUAGE", "en")
-GEMINI_LLM_MODEL = (_env("GEMINI_LLM_MODEL", "gemini-2.5-flash-lite") or "").split("/")[-1] or "gemini-2.5-flash-lite"
-ELEVENLABS_TTS_MODEL = (
-    (_env("ELEVENLABS_TTS_MODEL", "eleven_multilingual_v2") or "").split("/")[-1]
-    or "eleven_multilingual_v2"
-)
-ELEVENLABS_TTS_LANGUAGE = _env("ELEVENLABS_TTS_LANGUAGE", "en")
-ELEVENLABS_VOICE_ID = _env("ELEVENLABS_VOICE_ID")
-PREEMPTIVE_GENERATION = _env_bool("PREEMPTIVE_GENERATION", True)
+# Model config
+elevenlabs_voice_id = os.getenv("ELEVENLABS_VOICE_ID", "cgSgspJ2msm6clMCkdW9")
+elevenlabs_model = os.getenv("ELEVENLABS_TTS_MODEL", "eleven_multilingual_v2")
+gemini_model = os.getenv("GEMINI_LLM_MODEL", "gemini-2.5-flash")
 
 
 class Assistant(Agent):
@@ -67,116 +54,79 @@ class Assistant(Agent):
             You are curious, friendly, and have a sense of humor.""",
         )
 
-    # To add tools, use the @function_tool decorator.
-    # Here's an example that adds a simple weather tool.
-    # You also have to add `from livekit.agents import function_tool, RunContext` to the top of this file
-    # @function_tool
-    # async def lookup_weather(self, context: RunContext, location: str):
-    #     """Use this tool to look up current weather information in the given location.
-    #
-    #     If the location is not supported by the weather service, the tool will indicate this. You must tell the user the location's weather is unavailable.
-    #
-    #     Args:
-    #         location: The location to look up weather information for (e.g. city name)
-    #     """
-    #
-    #     logger.info(f"Looking up weather for {location}")
-    #
-    #     return "sunny with a temperature of 70 degrees."
-
-
-server = AgentServer()
-
 
 def prewarm(proc: JobProcess):
     proc.userdata["vad"] = silero.VAD.load()
 
 
-server.setup_fnc = prewarm
-
-
-@server.rtc_session(agent_name=AGENT_NAME)
-async def my_agent(ctx: JobContext):
-    # Logging setup
-    # Add any other context you want in all log entries here
-    ctx.log_context_fields = {
-        "room": ctx.room.name,
-    }
-
+async def entrypoint(ctx: JobContext):
     logger.info(
-        "Starting voice pipeline with stt=%s llm=%s tts=%s voice=%s preemptive=%s",
-        DEEPGRAM_STT_MODEL,
-        GEMINI_LLM_MODEL,
-        ELEVENLABS_TTS_MODEL,
-        ELEVENLABS_VOICE_ID,
-        PREEMPTIVE_GENERATION,
+        "Starting voice pipeline with stt=nova-3-general llm=%s tts=%s voice=%s",
+        gemini_model,
+        elevenlabs_model,
+        elevenlabs_voice_id,
     )
 
-    # Use the same provider mix as the working agent-worker setup while
-    # staying on LiveKit Inference so we don't need lockfile changes here.
-    session = AgentSession(
-        # Speech-to-text (STT) is your agent's ears, turning the user's speech into text that the LLM can understand.
+    session = AgentSession[HealthcareSessionData](
+        userdata=HealthcareSessionData(),
         stt=deepgram.STT(
-            model=DEEPGRAM_STT_MODEL,
-            language=DEEPGRAM_STT_LANGUAGE,
+            model="nova-3-general",
+            language="en",
+            api_key=deepgram_api_key,
         ),
-        # A Large Language Model (LLM) is your agent's brain, processing user input and generating a response.
-        llm=google.LLM(model=GEMINI_LLM_MODEL),
-        # Text-to-speech (TTS) is your agent's voice, turning the LLM's text into speech that the user can hear.
+        llm=google.LLM(
+            model=gemini_model,
+            api_key=google_api_key,
+        ),
         tts=elevenlabs.TTS(
-            model=ELEVENLABS_TTS_MODEL,
-            voice_id=ELEVENLABS_VOICE_ID,
-            language=ELEVENLABS_TTS_LANGUAGE,
+            model=elevenlabs_model,
+            voice_id=elevenlabs_voice_id,
+            api_key=elevenlabs_api_key,
+            language="en",
         ),
-        # VAD and turn detection are used to determine when the user is speaking and when the agent should respond.
         turn_handling=TurnHandlingOptions(
-            turn_detection=MultilingualModel(),
+            turn_detection=EnglishModel(),
             interruption={"mode": "vad"},
         ),
         vad=ctx.proc.userdata["vad"],
-        # Allow the LLM to generate a response while waiting for the end of turn.
-        preemptive_generation=PREEMPTIVE_GENERATION,
+        preemptive_generation=True,
     )
 
-    # To use a realtime model instead of a voice pipeline, use the following session setup instead.
-    # (Note: This is for the OpenAI Realtime API. For other providers, see https://docs.livekit.io/agents/models/realtime/))
-    # 1. Install livekit-agents[openai]
-    # 2. Set OPENAI_API_KEY in .env.local
-    # 3. Add `from livekit.plugins import openai` to the top of this file
-    # 4. Use the following session setup instead of the version above
-    # session = AgentSession(
-    #     llm=openai.realtime.RealtimeModel(voice="marin")
-    # )
+    @session.on("metrics_collected")
+    def _on_metrics_collected(ev: MetricsCollectedEvent):
+        metrics.log_metrics(ev.metrics)
 
-    # # Add a virtual avatar to the session, if desired
-    # # For other providers, see https://docs.livekit.io/agents/models/avatar/
-    # avatar = hedra.AvatarSession(
-    #   avatar_id="...",  # See https://docs.livekit.io/agents/models/avatar/plugins/hedra
-    # )
-    # # Start the avatar and wait for it to join
-    # await avatar.start(session, room=ctx.room)
+    async def log_usage():
+        logger.info("Session ended")
 
-    # Start the session, which initializes the voice pipeline and warms up the models
+    ctx.add_shutdown_callback(log_usage)
+
     await session.start(
-        agent=Assistant(),
         room=ctx.room,
+        agent=WelcomeAgent(),
+        room_input_options=RoomInputOptions(
+            noise_cancellation=noise_cancellation.BVCTelephony(),
+        ),
     )
 
     background_audio = BackgroundAudioPlayer(
-        # play office ambience sound looping in the background
         ambient_sound=AudioConfig(BuiltinAudioClip.OFFICE_AMBIENCE, volume=0.6),
-        # # play keyboard typing sound when the agent is thinking, here you can also use your own custom thinking sound by providing a list of file paths to different audio clips for variety
-        # thinking_sound=[
-        #     AudioConfig(BuiltinAudioClip.KEYBOARD_TYPING, volume=0.6),
-        #     AudioConfig(BuiltinAudioClip.KEYBOARD_TYPING2, volume=0.6),
-        # ],
+        thinking_sound=[
+            AudioConfig(BuiltinAudioClip.KEYBOARD_TYPING, volume=0.6),
+            AudioConfig(BuiltinAudioClip.KEYBOARD_TYPING2, volume=0.6),
+        ],
     )
-
     await background_audio.start(room=ctx.room, agent_session=session)
-
-    # Join the room and connect to the user
-    await ctx.connect()
 
 
 if __name__ == "__main__":
-    cli.run_app(server)
+    agents.cli.run_app(
+        agents.WorkerOptions(
+            entrypoint_fnc=entrypoint,
+            prewarm_fnc=prewarm,
+            api_key=LIVEKIT_API_KEY,
+            api_secret=LIVEKIT_API_SECRET,
+            ws_url=LIVEKIT_URL,
+            agent_name=AGENT_NAME,
+        )
+    )

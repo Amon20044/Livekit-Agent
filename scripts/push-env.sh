@@ -34,11 +34,16 @@ fi
 
 # Use Claude Code to generate commit message
 echo "Generating commit message..."
-MSG=$(claude -p "Look at this git diff and generate a single-line commit message (max 72 chars). No quotes, no prefixes like 'feat:' or 'fix:' unless appropriate. Just describe what changed concisely.
-
-$(git diff --cached --stat)
-
-$(git diff --cached)")
+DIFF_FILE=$(mktemp)
+{
+  echo "Generate a single-line commit message (max 72 chars). No quotes, no prefixes unless appropriate. Just describe what changed concisely."
+  echo ""
+  git diff --cached --stat
+  echo ""
+  git diff --cached
+} > "$DIFF_FILE"
+MSG=$(claude -p < "$DIFF_FILE")
+rm -f "$DIFF_FILE"
 
 git commit -m "$MSG"
 git push
