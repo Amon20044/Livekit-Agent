@@ -19,8 +19,6 @@ env:
   APP_DIR: "/opt/my-agent"
   SSH_PORT: ${{ inputs.ssh_port || '22' }}
   ENV_FILE: ${{ inputs.env_file || '/opt/my-agent/.env.local' }}
-  IMAGE_NAME: "my-agent"
-  CONTAINER_NAME: "my-agent"
 
 jobs:
   deploy:
@@ -76,7 +74,7 @@ jobs:
           scp -i ~/.ssh/ec2_key -o IdentitiesOnly=yes -P "${{ env.SSH_PORT }}" \
             /tmp/my-agent.tar.gz "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/tmp/my-agent.tar.gz"
 
-      - name: Build Docker image and start container on EC2
+      - name: Clean old agent and Docker state on EC2
         shell: bash
         run: |
           set -euo pipefail
@@ -90,39 +88,76 @@ jobs:
             fi
             sudo systemctl start docker
 
-            # Preserve env file, wipe everything else for a clean deploy
+            # Install docker-compose plugin if not present
+            if ! sudo docker compose version >/dev/null 2>&1; then
+              sudo mkdir -p /usr/local/lib/docker/cli-plugins
+              sudo curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-\$(uname -m) \
+                -o /usr/local/lib/docker/cli-plugins/docker-compose
+              sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+            fi
+
+            # --- FULL CLEANUP: stop and remove ALL containers ---
+            echo '=== Stopping all running containers ==='
+            sudo docker stop \$(sudo docker ps -aq) 2>/dev/null || true
+            echo '=== Removing all containers ==='
+            sudo docker rm -f \$(sudo docker ps -aq) 2>/dev/null || true
+
+            # --- Remove ALL Docker images ---
+            echo '=== Removing all Docker images ==='
+            sudo docker rmi -f \$(sudo docker images -aq) 2>/dev/null || true
+
+            # --- Clear all Docker cache (build cache, volumes, networks) ---
+            echo '=== Clearing Docker build cache ==='
+            sudo docker builder prune -af 2>/dev/null || true
+            echo '=== Docker system prune ==='
+            sudo docker system prune -af --volumes 2>/dev/null || true
+
+            # --- Wipe old app directory completely ---
+            echo '=== Removing old app directory ==='
+            # Preserve env file
             if [ -f '${{ env.ENV_FILE }}' ]; then
               cp '${{ env.ENV_FILE }}' /tmp/my-agent-env.bak
             fi
             sudo rm -rf '${{ env.APP_DIR }}'
+
+            echo '=== Cleanup complete ==='
+          "
+
+      - name: Deploy and start with docker compose
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/ec2_key -o IdentitiesOnly=yes -p "${{ env.SSH_PORT }}" "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" "
+            set -euo pipefail
+
+            # Create fresh app directory and extract code
             sudo mkdir -p '${{ env.APP_DIR }}'
+            sudo tar -xzf /tmp/my-agent.tar.gz -C '${{ env.APP_DIR }}'
+            sudo chown -R '${{ secrets.EC2_USER }}':'${{ secrets.EC2_USER }}' '${{ env.APP_DIR }}'
+
+            # Restore env file
             if [ -f /tmp/my-agent-env.bak ]; then
               sudo mv /tmp/my-agent-env.bak '${{ env.ENV_FILE }}'
             fi
 
-            # Extract fresh code (no .venv or stale artifacts)
-            sudo tar -xzf /tmp/my-agent.tar.gz -C '${{ env.APP_DIR }}'
-            sudo chown -R '${{ secrets.EC2_USER }}':'${{ secrets.EC2_USER }}' '${{ env.APP_DIR }}'
-
             cd '${{ env.APP_DIR }}'
 
-            # Free disk space from previous builds before rebuilding
-            sudo docker image prune -f
+            # Ensure LIVEKIT_URL, API_KEY, and API_SECRET are set in the env file
+            if [ -f '${{ env.ENV_FILE }}' ]; then
+              sed -i '/^LIVEKIT_URL=/d' '${{ env.ENV_FILE }}'
+              sed -i '/^LIVEKIT_API_KEY=/d' '${{ env.ENV_FILE }}'
+              sed -i '/^LIVEKIT_API_SECRET=/d' '${{ env.ENV_FILE }}'
+            fi
+            echo 'LIVEKIT_URL=ws://livekit:7880' >> '${{ env.ENV_FILE }}'
+            echo 'LIVEKIT_API_KEY=${{ secrets.LIVEKIT_API_KEY }}' >> '${{ env.ENV_FILE }}'
+            echo 'LIVEKIT_API_SECRET=${{ secrets.LIVEKIT_API_SECRET }}' >> '${{ env.ENV_FILE }}'
 
-            # Build image from scratch — no-cache prevents stale layers
-            sudo docker build --no-cache -t '${{ env.IMAGE_NAME }}' .
+            # Build and start all services (livekit, redis, agent) via compose
+            sudo docker compose -f docker-compose.local.yaml build --no-cache
+            sudo docker compose -f docker-compose.local.yaml up -d
 
-            # Replace running container with the new image
-            sudo docker stop '${{ env.CONTAINER_NAME }}' 2>/dev/null || true
-            sudo docker rm '${{ env.CONTAINER_NAME }}' 2>/dev/null || true
-            sudo docker run -d \
-              --name '${{ env.CONTAINER_NAME }}' \
-              --env-file '${{ env.ENV_FILE }}' \
-              --restart unless-stopped \
-              '${{ env.IMAGE_NAME }}'
-
-            echo 'Container started.'
-            sudo docker ps --filter name='${{ env.CONTAINER_NAME }}'
+            echo '=== Services started ==='
+            sudo docker compose -f docker-compose.local.yaml ps
           "
 
       - name: Show last logs
@@ -130,5 +165,9 @@ jobs:
         shell: bash
         run: |
           ssh -i ~/.ssh/ec2_key -o IdentitiesOnly=yes -p "${{ env.SSH_PORT }}" "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" "
-            sudo docker logs --tail 80 '${{ env.CONTAINER_NAME }}' 2>/dev/null || echo 'No container logs yet.'
+            cd '${{ env.APP_DIR }}'
+            echo '=== Agent logs ==='
+            sudo docker compose -f docker-compose.local.yaml logs --tail 80 agent 2>/dev/null || echo 'No agent logs yet.'
+            echo '=== LiveKit logs ==='
+            sudo docker compose -f docker-compose.local.yaml logs --tail 20 livekit 2>/dev/null || echo 'No livekit logs yet.'
           "
