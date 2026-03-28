@@ -1,6 +1,7 @@
 .env
 .env.*
 !.env.example
+!.env.encoded
 .DS_Store
 __pycache__
 .idea
