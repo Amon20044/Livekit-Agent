@@ -22,7 +22,6 @@ from livekit.agents import (
 from livekit.plugins import deepgram, elevenlabs, google, noise_cancellation, silero
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
-
 logger = logging.getLogger("agent")
 
 ENV_PATH = Path(__file__).resolve().parents[1] / ".env.local"
