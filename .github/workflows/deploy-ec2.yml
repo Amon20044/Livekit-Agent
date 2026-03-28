@@ -63,13 +63,16 @@ jobs:
             sudo docker stop '${{ env.CONTAINER_NAME }}' 2>/dev/null || true
             sudo docker rm -f '${{ env.CONTAINER_NAME }}' 2>/dev/null || true
 
-            # Free memory: remove old image + dangling stuff
-            sudo docker rmi -f '${{ env.IMAGE_NAME }}' 2>/dev/null || true
-            sudo docker image prune -f 2>/dev/null || true
-            sudo docker builder prune -af 2>/dev/null || true
+            # Free memory only when disk is low (< 1 GB free)
+            FREE_KB=\$(df /var/lib/docker 2>/dev/null | awk 'NR==2{print \$4}' || echo 9999999)
+            if [ \"\$FREE_KB\" -lt 1048576 ]; then
+              echo 'Low disk — pruning docker images and build cache...'
+              sudo docker rmi -f '${{ env.IMAGE_NAME }}' 2>/dev/null || true
+              sudo docker image prune -f 2>/dev/null || true
+              sudo docker builder prune -af 2>/dev/null || true
+            fi
 
-            # Clean old code
-            sudo rm -rf '${{ env.APP_DIR }}'
+            # Extract new code over existing directory
             sudo mkdir -p '${{ env.APP_DIR }}'
             sudo tar -xzf /tmp/my-agent.tar.gz -C '${{ env.APP_DIR }}'
             sudo chown -R '${{ secrets.EC2_USER }}':'${{ secrets.EC2_USER }}' '${{ env.APP_DIR }}'
