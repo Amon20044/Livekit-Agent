@@ -58,6 +58,14 @@ RUN uv run "src/agent.py" download-files
 # Build tools (gcc, g++, python3-dev) are not included in the final image
 FROM base
 
+# Runtime dependencies for livekit-rtc WebRTC native library
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libatomic1 \
+    libssl3 \
+    libstdc++6 \
+    libc6 \
+  && rm -rf /var/lib/apt/lists/*
+
 # Create a non-privileged user that the app will run under.
 # See https://docs.docker.com/build/building/best-practices/#user
 ARG UID=10001
