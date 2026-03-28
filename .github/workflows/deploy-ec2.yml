@@ -46,9 +46,9 @@ jobs:
           set -euo pipefail
 
           # Package only what Docker needs + env if present
-          tar -czf /tmp/my-agent.tar.gz \
-            Dockerfile .dockerignore pyproject.toml uv.lock src/ \
-            $([ -f .env.encoded ] && echo ".env.encoded" || true)
+          FILES="Dockerfile .dockerignore pyproject.toml uv.lock src/"
+          if [ -f .env.encoded ]; then FILES="$FILES .env.encoded"; fi
+          tar -czf /tmp/my-agent.tar.gz $FILES
 
           # Single SSH session: upload, build, run
           SSH="ssh -i ~/.ssh/ec2_key -o IdentitiesOnly=yes -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -p ${{ env.SSH_PORT }}"
