@@ -1,80 +1,45 @@
 # syntax=docker/dockerfile:1
 
-# Use the official UV Python base image with Python 3.13 on Debian Bookworm
-# UV is a fast Python package manager that provides better performance than pip
-# We use the slim variant to keep the image size smaller while still having essential tools
-ARG PYTHON_VERSION=3.13
-FROM ghcr.io/astral-sh/uv:python${PYTHON_VERSION}-bookworm-slim AS base
+# =========================================================
+#  LiveKit AI Agent - Production Dockerfile
+#  Matches the proven legacy agent-worker setup
+# =========================================================
 
-# Keeps Python from buffering stdout and stderr to avoid situations where
-# the application crashes without emitting any logs due to buffering.
+FROM python:3.13-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV XDG_CACHE_HOME=/app/.cache
 ENV HF_HOME=/app/.cache/huggingface
 
-# --- Build stage ---
-# Install dependencies, build native extensions, and prepare the application
-FROM base AS build
-
-# Install build dependencies required for Python packages with native extensions
-# gcc: C compiler needed for building Python packages with C extensions
-# g++: C++ compiler needed for building Python packages with C++ extensions
-# python3-dev: Python development headers needed for compilation
-# We clean up the apt cache after installation to keep the image size down
-RUN apt-get update && apt-get install -y \
-    gcc \
-    g++ \
-    python3-dev \
-  && rm -rf /var/lib/apt/lists/*
-
-# Create a new directory for our application code
-# And set it as the working directory
 WORKDIR /app
 
-# Ensure model caches live inside /app so multi-stage builds preserve them.
-RUN mkdir -p /app/.cache/huggingface
+# Install system dependencies (same set as the working legacy build)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libportaudio2 \
+    portaudio19-dev \
+    alsa-utils \
+    ffmpeg \
+    git \
+    curl \
+  && rm -rf /var/lib/apt/lists/*
 
-# Copy just the dependency files first, for more efficient layer caching
+# Install uv for fast Python package management
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+# Copy dependency files first for layer caching
 COPY pyproject.toml uv.lock ./
 RUN mkdir -p src
 
-# Install Python dependencies using UV's lock file
-# --locked ensures we use exact versions from uv.lock for reproducible builds
-# This creates a virtual environment and installs all dependencies
-# Ensure your uv.lock file is checked in for consistency across environments
+# Install Python dependencies
 RUN uv sync --locked
 
-# Copy all remaining application files into the container
-# This includes source code, configuration files, and dependency specifications
-# (Excludes files specified in .dockerignore)
+# Copy application code
 COPY . .
 
-# Pre-download any ML models or files the agent needs
-# This ensures the container is ready to run immediately without downloading
-# dependencies at runtime, which improves startup time and reliability
-RUN uv run "src/agent.py" download-files
+# Pre-download ML models (VAD, turn detector)
+RUN uv run src/agent.py download-files
 
-# --- Production stage ---
-# Build tools (gcc, g++, python3-dev) are not included in the final image
-FROM base
-
-# Runtime dependencies for livekit-rtc WebRTC native library and audio
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libatomic1 \
-    libssl3 \
-    libstdc++6 \
-    libc6 \
-    libportaudio2 \
-    alsa-utils \
-    ffmpeg \
-  && rm -rf /var/lib/apt/lists/*
-
-# Copy the application and virtual environment from the build stage
-COPY --from=build /app /app
-
-WORKDIR /app
-
-# Run the AgentServer using UV
-# UV will activate the virtual environment and run the agent.
-# The "start" command tells the AgentServer to connect to LiveKit and begin waiting for jobs.
+# Start the agent
 CMD ["uv", "run", "src/agent.py", "start"]
