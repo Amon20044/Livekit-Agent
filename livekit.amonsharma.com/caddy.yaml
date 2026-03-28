@@ -10,7 +10,7 @@ apps:
     certificates:
       automate:
         - livekit.amonsharma.com
-        - livekit-turn.amonsharma.com
+        - turn-livekit.amonsharma.com
   layer4:
     servers:
       main:
@@ -19,7 +19,7 @@ apps:
           - match:
             - tls:
                 sni:
-                  - "livekit-turn.amonsharma.com"
+                  - "turn-livekit.amonsharma.com"
             handle:
               - handler: tls
               - handler: proxy

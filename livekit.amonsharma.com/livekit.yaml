@@ -21,9 +21,9 @@ redis:
     max_redirects: null
 turn:
     enabled: true
-    domain: livekit-turn.amonsharma.com
+    domain: turn-livekit.amonsharma.com
     tls_port: 5349
     udp_port: 3478
     external_tls: true
 keys:
-    API6bn6ANPMRbsu: nOnJ5qLKlfRS3pe2FgfPwbec0xzElI4N4MjY5zVkXRtB
+    APIFmXGKZsHWkcA: dP5KujdtOXxTKXU4E5ko56t22gvGfoqk5DXcZOkuafE
