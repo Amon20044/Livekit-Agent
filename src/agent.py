@@ -24,6 +24,7 @@ from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
 logger = logging.getLogger("agent")
 
+
 ENV_PATH = Path(__file__).resolve().parents[1] / ".env.local"
 load_dotenv(ENV_PATH)
 
