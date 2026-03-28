@@ -76,10 +76,14 @@ jobs:
             if [ -f /tmp/my-agent-env.bak ]; then sudo mv /tmp/my-agent-env.bak '${{ env.ENV_FILE }}'; fi
             rm -f /tmp/my-agent.tar.gz
 
-            # Set LIVEKIT_URL
+            # Set LiveKit connection
             touch '${{ env.ENV_FILE }}'
             sed -i '/^LIVEKIT_URL=/d' '${{ env.ENV_FILE }}'
+            sed -i '/^LIVEKIT_API_KEY=/d' '${{ env.ENV_FILE }}'
+            sed -i '/^LIVEKIT_API_SECRET=/d' '${{ env.ENV_FILE }}'
             echo 'LIVEKIT_URL=ws://localhost:7880' >> '${{ env.ENV_FILE }}'
+            echo 'LIVEKIT_API_KEY=${{ secrets.LIVEKIT_API_KEY }}' >> '${{ env.ENV_FILE }}'
+            echo 'LIVEKIT_API_SECRET=${{ secrets.LIVEKIT_API_SECRET }}' >> '${{ env.ENV_FILE }}'
 
             # Build and run
             cd '${{ env.APP_DIR }}'
@@ -98,24 +102,57 @@ jobs:
         run: |
           SSH="ssh -i ~/.ssh/ec2_key -o IdentitiesOnly=yes -o ServerAliveInterval=10 -p ${{ env.SSH_PORT }}"
           RESULT="FAIL"
+          REASON=""
           for i in $(seq 1 30); do
-            if $SSH "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" \
-              "sudo docker logs '${{ env.CONTAINER_NAME }}' 2>&1 | grep -q 'registered worker'"; then
+            LOGS=$($SSH "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" \
+              "sudo docker logs '${{ env.CONTAINER_NAME }}' 2>&1" || true)
+
+            if echo "$LOGS" | grep -q 'registered worker'; then
               RESULT="SUCCESS"
               break
             fi
+
+            # Early fail: detect fatal errors instead of waiting the full timeout
+            if echo "$LOGS" | grep -q 'exit code -9'; then
+              REASON="OOM: process killed (exit code -9). Instance needs more memory."
+              break
+            fi
+            if echo "$LOGS" | grep -q '401.*Invalid response status'; then
+              REASON="AUTH: 401 Unauthorized. LIVEKIT_API_KEY/SECRET don't match the livekit server config."
+              break
+            fi
+            if echo "$LOGS" | grep -q 'Connection refused'; then
+              REASON="CONN: LiveKit server not reachable at ws://localhost:7880."
+              break
+            fi
+            if ! $SSH "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" \
+              "sudo docker ps -q --filter name='${{ env.CONTAINER_NAME }}' | grep -q ." 2>/dev/null; then
+              REASON="CRASH: Container exited."
+              break
+            fi
+
             echo "Attempt $i/30 - waiting 5s..."
             sleep 5
           done
 
           echo ""
           echo "========================================="
-          echo "  DEPLOY RESULT: $RESULT"
+          if [ "$RESULT" = "SUCCESS" ]; then
+            echo "  DEPLOY RESULT: SUCCESS"
+          else
+            echo "  DEPLOY RESULT: FAILED"
+            if [ -n "$REASON" ]; then
+              echo "  REASON: $REASON"
+            else
+              echo "  REASON: Agent did not register within timeout."
+            fi
+          fi
           echo "========================================="
           echo ""
+          echo "=== Container logs ==="
           $SSH "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" \
             "sudo docker logs --tail 40 '${{ env.CONTAINER_NAME }}' 2>&1" || true
 
-          if [ "$RESULT" = "FAIL" ]; then
+          if [ "$RESULT" != "SUCCESS" ]; then
             exit 1
           fi
