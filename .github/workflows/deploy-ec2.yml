@@ -127,10 +127,26 @@ jobs:
             sudo docker system prune -af --volumes 2>/dev/null || true
             sudo docker network prune -f 2>/dev/null || true
 
-            # --- Kill any processes holding LiveKit ports (7880, 7881) ---
-            echo '=== Freeing LiveKit ports ==='
-            sudo fuser -k 7880/tcp 2>/dev/null || true
-            sudo fuser -k 7881/tcp 2>/dev/null || true
+            # --- Stop any host-level livekit service and kill processes on LiveKit ports ---
+            echo '=== Stopping host-level livekit services ==='
+            sudo systemctl stop livekit 2>/dev/null || true
+            sudo systemctl stop livekit-server 2>/dev/null || true
+            sudo systemctl disable livekit 2>/dev/null || true
+            sudo systemctl disable livekit-server 2>/dev/null || true
+            sudo pkill -f livekit-server 2>/dev/null || true
+            sudo pkill -f livekit 2>/dev/null || true
+
+            echo '=== Freeing LiveKit ports (7880, 7881) ==='
+            for port in 7880 7881; do
+              pid=\$(sudo ss -tlnp sport = :\$port | grep -oP 'pid=\K[0-9]+' | head -1)
+              if [ -n \"\$pid\" ]; then
+                echo \"Killing PID \$pid on port \$port\"
+                sudo kill -9 \$pid 2>/dev/null || true
+              fi
+            done
+            sleep 2
+            echo '=== Verifying ports are free ==='
+            sudo ss -tlnp sport = :7880 sport = :7881 || true
 
             # --- Wipe old app directory completely ---
             echo '=== Removing old app directory ==='
