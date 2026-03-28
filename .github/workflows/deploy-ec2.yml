@@ -102,6 +102,14 @@ jobs:
               sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
             fi
 
+            # --- Tear down any existing compose project first ---
+            echo '=== Tearing down existing compose project ==='
+            if [ -f '${{ env.APP_DIR }}/docker-compose.local.yaml' ]; then
+              cd '${{ env.APP_DIR }}'
+              sudo docker compose -f docker-compose.local.yaml down --remove-orphans 2>/dev/null || true
+              cd /
+            fi
+
             # --- FULL CLEANUP: stop and remove ALL containers ---
             echo '=== Stopping all running containers ==='
             sudo docker stop \$(sudo docker ps -aq) 2>/dev/null || true
@@ -115,8 +123,14 @@ jobs:
             # --- Clear all Docker cache (build cache, volumes, networks) ---
             echo '=== Clearing Docker build cache ==='
             sudo docker builder prune -af 2>/dev/null || true
-            echo '=== Docker system prune ==='
+            echo '=== Docker system prune (includes networks) ==='
             sudo docker system prune -af --volumes 2>/dev/null || true
+            sudo docker network prune -f 2>/dev/null || true
+
+            # --- Kill any processes holding LiveKit ports (7880, 7881) ---
+            echo '=== Freeing LiveKit ports ==='
+            sudo fuser -k 7880/tcp 2>/dev/null || true
+            sudo fuser -k 7881/tcp 2>/dev/null || true
 
             # --- Wipe old app directory completely ---
             echo '=== Removing old app directory ==='
