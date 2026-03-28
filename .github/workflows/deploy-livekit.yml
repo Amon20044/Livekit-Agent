@@ -1,0 +1,128 @@
+name: Deploy LiveKit Infrastructure
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'livekit.amonsharma.com/**'
+      - '.github/workflows/deploy-livekit.yml'
+  workflow_dispatch:
+    inputs:
+      ssh_port:
+        description: "SSH port"
+        default: "22"
+
+env:
+  LIVEKIT_DIR: "/opt/livekit"
+  SSH_PORT: ${{ inputs.ssh_port || '22' }}
+  CONFIG_DIR: "livekit.amonsharma.com"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          printf "%s\n" "${{ secrets.EC2_PRIVATE_KEY }}" > ~/.ssh/ec2_key
+          chmod 600 ~/.ssh/ec2_key
+          ssh-keyscan -p "${{ env.SSH_PORT }}" -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Deploy LiveKit infrastructure
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+
+          SSH="ssh -i ~/.ssh/ec2_key -o IdentitiesOnly=yes -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -p ${{ env.SSH_PORT }}"
+          SCP="scp -i ~/.ssh/ec2_key -o IdentitiesOnly=yes -o ConnectTimeout=15 -C -P ${{ env.SSH_PORT }}"
+          REMOTE="${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}"
+
+          # Package config files
+          tar -czf /tmp/livekit-configs.tar.gz -C "${{ env.CONFIG_DIR }}" \
+            livekit.yaml caddy.yaml docker-compose.yaml redis.conf update_ip.sh livekit-docker.service
+
+          # Upload
+          $SCP /tmp/livekit-configs.tar.gz "$REMOTE:/tmp/livekit-configs.tar.gz"
+
+          # Apply configs and restart
+          $SSH "$REMOTE" "
+            set -euo pipefail
+
+            # Stop existing livekit services
+            sudo systemctl stop livekit-docker 2>/dev/null || true
+
+            # Clear config files but preserve caddy_data (TLS certs) and caddy_data contents
+            cd '${{ env.LIVEKIT_DIR }}' 2>/dev/null && \
+              sudo find . -maxdepth 1 -not -name caddy_data -not -name '.' -delete 2>/dev/null || true
+            sudo mkdir -p '${{ env.LIVEKIT_DIR }}/caddy_data'
+
+            # Extract new configs
+            sudo tar -xzf /tmp/livekit-configs.tar.gz -C '${{ env.LIVEKIT_DIR }}'
+            sudo chmod 755 '${{ env.LIVEKIT_DIR }}/update_ip.sh'
+            rm -f /tmp/livekit-configs.tar.gz
+
+            # Install systemd service
+            sudo cp '${{ env.LIVEKIT_DIR }}/livekit-docker.service' /etc/systemd/system/livekit-docker.service
+
+            # Patch caddy.yaml with instance public IP
+            sudo '${{ env.LIVEKIT_DIR }}/update_ip.sh'
+
+            # Install docker-compose if missing
+            if ! command -v docker-compose &>/dev/null && [ ! -f /usr/local/bin/docker-compose ]; then
+              echo 'Installing docker-compose...'
+              sudo curl -sL \"https://github.com/docker/compose/releases/download/v2.20.2/docker-compose-\$(uname -s)-\$(uname -m)\" -o /usr/local/bin/docker-compose
+              sudo chmod 755 /usr/local/bin/docker-compose
+            fi
+
+            # Reload and restart
+            sudo systemctl daemon-reload
+            sudo systemctl enable docker
+            sudo systemctl start docker
+            sudo systemctl enable livekit-docker
+            sudo systemctl start livekit-docker
+          "
+
+      - name: Verify LiveKit is running
+        timeout-minutes: 3
+        run: |
+          SSH="ssh -i ~/.ssh/ec2_key -o IdentitiesOnly=yes -o ServerAliveInterval=10 -p ${{ env.SSH_PORT }}"
+          REMOTE="${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}"
+          RESULT="FAIL"
+
+          for i in $(seq 1 15); do
+            RUNNING=$($SSH "$REMOTE" \
+              "sudo docker ps --filter status=running --format '{{.Names}}' | grep -c -E 'caddy|livekit|redis|sip'" 2>/dev/null || echo 0)
+
+            if [ "$RUNNING" -ge 3 ]; then
+              RESULT="SUCCESS"
+              break
+            fi
+
+            echo "Attempt $i/15 - $RUNNING/4 containers running, waiting 5s..."
+            sleep 5
+          done
+
+          echo ""
+          echo "========================================="
+          if [ "$RESULT" = "SUCCESS" ]; then
+            echo "  LIVEKIT DEPLOY: SUCCESS"
+          else
+            echo "  LIVEKIT DEPLOY: FAILED"
+          fi
+          echo "========================================="
+          echo ""
+          echo "=== Container status ==="
+          $SSH "$REMOTE" "sudo docker ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'" || true
+
+          if [ "$RESULT" != "SUCCESS" ]; then
+            echo ""
+            echo "=== Docker compose logs ==="
+            $SSH "$REMOTE" "cd /opt/livekit && sudo docker-compose logs --tail 20" 2>/dev/null || true
+            exit 1
+          fi

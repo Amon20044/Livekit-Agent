@@ -6,7 +6,7 @@ rtc:
     port_range_start: 50000
     port_range_end: 60000
     use_external_ip: true
-    enable_loopback_candidate: true
+    enable_loopback_candidate: false
 redis:
     address: localhost:6379
     username: ""
