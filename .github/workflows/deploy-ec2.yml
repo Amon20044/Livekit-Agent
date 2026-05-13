@@ -126,12 +126,12 @@ jobs:
             # /etc/my-agent.env for docker --env-file and
             # /opt/my-agent/.env.local for src/agent.py load_dotenv().
             if [ -f /tmp/my-agent.env.local ]; then
-              sudo install -m 600 -o root -g root /tmp/my-agent.env.local '${{ env.ENV_FILE }}'
+              sudo install -m 600 -o '${{ secrets.EC2_USER }}' -g '${{ secrets.EC2_USER }}' /tmp/my-agent.env.local '${{ env.ENV_FILE }}'
               rm -f /tmp/my-agent.env.local
             elif [ -f '${{ env.ENV_FILE }}' ]; then
               echo 'ENV upload missing; reusing existing ${{ env.ENV_FILE }}'
               sudo chmod 600 '${{ env.ENV_FILE }}'
-              sudo chown root:root '${{ env.ENV_FILE }}'
+              sudo chown '${{ secrets.EC2_USER }}':'${{ secrets.EC2_USER }}' '${{ env.ENV_FILE }}'
             else
               echo 'Missing /tmp/my-agent.env.local and no existing ${{ env.ENV_FILE }} to reuse.'
               exit 1

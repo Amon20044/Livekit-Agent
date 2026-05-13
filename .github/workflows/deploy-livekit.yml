@@ -113,12 +113,12 @@ jobs:
             # Install the exact ENV_LOCAL secret for the agent and derive
             # LiveKit service configs from the same keypair.
             if [ -f /tmp/my-agent.env.local ]; then
-              sudo install -m 600 -o root -g root /tmp/my-agent.env.local /etc/my-agent.env
+              sudo install -m 600 -o '${{ secrets.EC2_USER }}' -g '${{ secrets.EC2_USER }}' /tmp/my-agent.env.local /etc/my-agent.env
               rm -f /tmp/my-agent.env.local
             elif [ -f /etc/my-agent.env ]; then
               echo 'ENV upload missing; reusing existing /etc/my-agent.env'
               sudo chmod 600 /etc/my-agent.env
-              sudo chown root:root /etc/my-agent.env
+              sudo chown '${{ secrets.EC2_USER }}':'${{ secrets.EC2_USER }}' /etc/my-agent.env
             else
               echo 'Missing /tmp/my-agent.env.local and no existing /etc/my-agent.env to reuse.'
               exit 1
