@@ -10,7 +10,8 @@ apps:
     certificates:
       automate:
         - livekit.amonsharma.com
-        - turn-livekit.amonsharma.com
+        - livekit-turn.amonsharma.com
+        - livekit-whip.amonsharma.com
   layer4:
     servers:
       main:
@@ -19,7 +20,7 @@ apps:
           - match:
             - tls:
                 sni:
-                  - "turn-livekit.amonsharma.com"
+                  - "livekit-turn.amonsharma.com"
             handle:
               - handler: tls
               - handler: proxy
@@ -36,3 +37,14 @@ apps:
               - handler: proxy
                 upstreams:
                   - dial: ["localhost:7880"]
+          - match:
+              - tls:
+                  sni:
+                    - "livekit-whip.amonsharma.com"
+            handle:
+              - handler: tls
+                connection_policies:
+                  - alpn: ["http/1.1"]
+              - handler: proxy
+                upstreams:
+                  - dial: ["localhost:8080"]

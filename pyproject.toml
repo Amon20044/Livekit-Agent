@@ -3,24 +3,19 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "agent-starter-python"
+name = "News-Anchor-Agent"
 version = "1.0.0"
-description = "Simple voice AI assistant built with LiveKit Agents for Python"
+description = "News voice AI assistant built with LiveKit Agents for Python"
 requires-python = ">=3.10, <3.15"
 
 dependencies = [
     "livekit",
-    "livekit-agents",
-    "livekit-plugins-openai",
-    "livekit-plugins-elevenlabs",
-    "livekit-plugins-deepgram",
-    "livekit-plugins-silero",
-    "livekit-plugins-google",
+    "livekit-agents[deepgram,elevenlabs,google]~=1.5",
+    "livekit-plugins-ai-coustics",
     "livekit-plugins-turn-detector",
-    "livekit-plugins-noise-cancellation~=0.2",
-    "python-dotenv",
+    "python-dotenv>=1.0",
     "annotated-types",
-    "aiohttp",
+    "aiohttp>=3.9",
     "sentencepiece",
 ]
 
@@ -43,7 +38,7 @@ asyncio_default_fixture_loop_scope = "function"
 
 [tool.ruff]
 line-length = 88
-target-version = "py39"
+target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "B", "A", "C4", "UP", "SIM", "RUF"]

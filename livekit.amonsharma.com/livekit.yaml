@@ -21,9 +21,12 @@ redis:
     max_redirects: null
 turn:
     enabled: true
-    domain: turn-livekit.amonsharma.com
+    domain: livekit-turn.amonsharma.com
     tls_port: 5349
     udp_port: 3478
     external_tls: true
+ingress:
+    rtmp_base_url: rtmp://livekit.amonsharma.com:1935/x
+    whip_base_url: https://livekit-whip.amonsharma.com/w
 keys:
-    APIFmXGKZsHWkcA: dP5KujdtOXxTKXU4E5ko56t22gvGfoqk5DXcZOkuafE
+    APIczEe4hqR7b4t: SUL2AbREZQmzsRHy670iyQKZ6urBqHx0FUbmJKOGlHD

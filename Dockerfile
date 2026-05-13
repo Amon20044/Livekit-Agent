@@ -1,45 +1,44 @@
 # syntax=docker/dockerfile:1
 
-# =========================================================
-#  LiveKit AI Agent - Production Dockerfile
-#  Matches the proven legacy agent-worker setup
-# =========================================================
+ARG PYTHON_VERSION=3.13
+FROM ghcr.io/astral-sh/uv:python${PYTHON_VERSION}-bookworm-slim AS base
 
-FROM python:3.13-slim
-
-ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+ENV UV_COMPILE_BYTECODE=1
 ENV XDG_CACHE_HOME=/app/.cache
 ENV HF_HOME=/app/.cache/huggingface
 
-WORKDIR /app
+FROM base AS build
 
-# Install system dependencies (same set as the working legacy build)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    libportaudio2 \
-    portaudio19-dev \
-    alsa-utils \
-    ffmpeg \
-    git \
-    curl \
+    gcc \
+    g++ \
+    python3-dev \
   && rm -rf /var/lib/apt/lists/*
 
-# Install uv for fast Python package management
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+WORKDIR /app
 
-# Copy dependency files first for layer caching
 COPY pyproject.toml uv.lock ./
-RUN mkdir -p src
-
-# Install Python dependencies
 RUN uv sync --locked
 
-# Copy application code
 COPY . .
 
-# Pre-download ML models (VAD, turn detector)
-RUN uv run src/agent.py download-files
+RUN uv run python src/agent.py download-files
 
-# Start the agent
-CMD ["uv", "run", "src/agent.py", "start"]
+FROM base
+
+ARG UID=10001
+RUN adduser \
+    --disabled-password \
+    --gecos "" \
+    --home "/app" \
+    --shell "/sbin/nologin" \
+    --uid "${UID}" \
+    appuser
+
+WORKDIR /app
+COPY --from=build --chown=appuser:appuser /app /app
+
+USER appuser
+
+CMD ["uv", "run", "python", "src/agent.py", "start"]
