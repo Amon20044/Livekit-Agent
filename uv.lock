@@ -1635,6 +1635,7 @@ requires-dist = [
     { name = "livekit" },
     { name = "livekit-agents", extras = ["deepgram", "elevenlabs", "google"], specifier = "~=1.5" },
     { name = "livekit-plugins-ai-coustics" },
+    { name = "livekit-plugins-ai-coustics", specifier = ">=0.2.13" },
     { name = "livekit-plugins-turn-detector" },
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "sentencepiece" },

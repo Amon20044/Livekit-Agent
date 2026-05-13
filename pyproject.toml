@@ -17,6 +17,7 @@ dependencies = [
     "annotated-types",
     "aiohttp>=3.9",
     "sentencepiece",
+    "livekit-plugins-ai-coustics>=0.2.13",
 ]
 
 [dependency-groups]

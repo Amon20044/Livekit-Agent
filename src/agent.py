@@ -7,14 +7,15 @@ from livekit.agents import (
     Agent,
     AgentSession,
     JobContext,
+    JobProcess,
     MetricsCollectedEvent,
+    RoomInputOptions,
     TurnHandlingOptions,
     metrics,
-    room_io,
 )
-from livekit.plugins import deepgram, elevenlabs, google
-from livekit.plugins.ai_coustics import VAD, EnhancerModel, audio_enhancement
+from livekit.plugins import deepgram, elevenlabs, google, silero
 from livekit.plugins.turn_detector.english import EnglishModel
+from livekit.plugins import ai_coustics
 
 from tools import search_ai_mode, search_latest_news
 
@@ -90,6 +91,10 @@ You are Anchor, a fast voice-first news and current-events agent.
         )
 
 
+def prewarm(proc: JobProcess):
+    proc.userdata["vad"] = silero.VAD.load()
+
+
 async def entrypoint(ctx: JobContext):
     stt_model = _plugin_model(deepgram_model, "deepgram")
     llm_model = _plugin_model(gemini_model, "google")
@@ -127,7 +132,7 @@ async def entrypoint(ctx: JobContext):
             turn_detection=EnglishModel(),
             interruption={"mode": "vad"},
         ),
-        vad=VAD(),
+        vad=ctx.proc.userdata["vad"],
         preemptive_generation=_env_bool("PREEMPTIVE_GENERATION", True),
         use_tts_aligned_transcript=True,
     )
@@ -144,10 +149,8 @@ async def entrypoint(ctx: JobContext):
     await session.start(
         room=ctx.room,
         agent=AnchorVoiceAgent(),
-        room_options=room_io.RoomOptions(
-            audio_input=room_io.AudioInputOptions(
-                noise_cancellation=audio_enhancement(model=EnhancerModel.QUAIL_L),
-            ),
+        room_input_options=RoomInputOptions(
+            noise_cancellation=ai_coustics.audio_enhancement(model=ai_coustics.EnhancerModel.QUAIL_VF_L),
         ),
     )
 
@@ -156,6 +159,7 @@ if __name__ == "__main__":
     agents.cli.run_app(
         agents.WorkerOptions(
             entrypoint_fnc=entrypoint,
+            prewarm_fnc=prewarm,
             api_key=LIVEKIT_API_KEY,
             api_secret=LIVEKIT_API_SECRET,
             ws_url=LIVEKIT_URL,
