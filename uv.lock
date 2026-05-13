@@ -1200,6 +1200,9 @@ elevenlabs = [
 google = [
     { name = "livekit-plugins-google" },
 ]
+silero = [
+    { name = "livekit-plugins-silero" },
+]
 
 [[package]]
 name = "livekit-api"
@@ -1311,6 +1314,22 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/8f/69/5a750e446f6596ebd3d8dd6fc6129c128fd81110387b8954189c2d64a159/livekit_plugins_google-1.5.8.tar.gz", hash = "sha256:a712ef5a97eb29ef2115dd6ad1549de7d1f9564e51524e5d6b69f0bd359f5bd6", size = 40768, upload-time = "2026-05-05T18:47:23.746Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/52/fb/55098183f63574ef7c63e5c8d559f723ffb2e70e506135df893c94790aa3/livekit_plugins_google-1.5.8-py3-none-any.whl", hash = "sha256:511b548e1b57be3dbde53d4e32ebadd2b676e67640b3df3e48cb028acc855fb5", size = 47378, upload-time = "2026-05-05T18:47:22.379Z" },
+]
+
+[[package]]
+name = "livekit-plugins-silero"
+version = "1.5.8"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "livekit-agents" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.4.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "onnxruntime", version = "1.24.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "onnxruntime", version = "1.26.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/2c/dc/59849bb0eef9e9f7d8cc9ef460119eb22c849e305be8886743bf93a4b657/livekit_plugins_silero-1.5.8.tar.gz", hash = "sha256:705193cc1c456509f7b9ca9665021e785f10927af08d0047f3df7767a2c160fc", size = 1955609, upload-time = "2026-05-05T18:48:36.269Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ea/f6/c16e9d2d5c6d99ab51598b1dee340a3fdb7a129da90878ebfbf831251aa4/livekit_plugins_silero-1.5.8-py3-none-any.whl", hash = "sha256:9ab53cec7bcf807e92825041103abedda2fc1d96aa0afe84efafcce2834cceeb", size = 3903689, upload-time = "2026-05-05T18:48:33.988Z" },
 ]
 
 [[package]]
@@ -1614,7 +1633,7 @@ dependencies = [
     { name = "aiohttp" },
     { name = "annotated-types" },
     { name = "livekit" },
-    { name = "livekit-agents", extra = ["deepgram", "elevenlabs", "google"] },
+    { name = "livekit-agents", extra = ["deepgram", "elevenlabs", "google", "silero"] },
     { name = "livekit-plugins-ai-coustics" },
     { name = "livekit-plugins-turn-detector" },
     { name = "python-dotenv" },
@@ -1633,8 +1652,7 @@ requires-dist = [
     { name = "aiohttp", specifier = ">=3.9" },
     { name = "annotated-types" },
     { name = "livekit" },
-    { name = "livekit-agents", extras = ["deepgram", "elevenlabs", "google"], specifier = "~=1.5" },
-    { name = "livekit-plugins-ai-coustics" },
+    { name = "livekit-agents", extras = ["deepgram", "elevenlabs", "google", "silero"], specifier = "~=1.5" },
     { name = "livekit-plugins-ai-coustics", specifier = ">=0.2.13" },
     { name = "livekit-plugins-turn-detector" },
     { name = "python-dotenv", specifier = ">=1.0" },
