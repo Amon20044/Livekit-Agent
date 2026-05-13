@@ -13,8 +13,8 @@ def test_anchor_agent_is_search_focused_and_has_serpapi_tools() -> None:
 
 def test_plugin_model_accepts_prefixed_and_legacy_values() -> None:
     assert _plugin_model("deepgram/nova-3-general", "deepgram") == "nova-3"
-    assert _plugin_model("google/gemini-3-flash-preview", "google") == (
-        "gemini-3-flash-preview"
+    assert _plugin_model("google/gemini-2.5-flash-lite", "google") == (
+        "gemini-2.5-flash-lite"
     )
     assert _plugin_model("elevenlabs/eleven_flash_v2_5", "elevenlabs") == (
         "eleven_flash_v2_5"

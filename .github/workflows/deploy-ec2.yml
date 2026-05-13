@@ -73,20 +73,93 @@ jobs:
 
       - name: Deploy
         shell: bash
+        env:
+          ENV_LOCAL: ${{ secrets.ENV_LOCAL }}
+          LIVEKIT_URL: ${{ secrets.LIVEKIT_URL || vars.LIVEKIT_URL }}
+          LIVEKIT_API_KEY: ${{ secrets.LIVEKIT_API_KEY }}
+          LIVEKIT_API_SECRET: ${{ secrets.LIVEKIT_API_SECRET }}
+          LIVEKIT_AGENT_NAME: ${{ vars.LIVEKIT_AGENT_NAME || 'my-agent' }}
+          SERPAPI_API_KEY: ${{ secrets.SERPAPI_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          ELEVEN_API_KEY: ${{ secrets.ELEVEN_API_KEY }}
+          ELEVENLABS_VOICE_ID: ${{ vars.ELEVENLABS_VOICE_ID || 'cgSgspJ2msm6clMCkdW9' }}
+          DEEPGRAM_API_KEY: ${{ secrets.DEEPGRAM_API_KEY }}
+          DEEPGRAM_STT_MODEL: ${{ vars.DEEPGRAM_STT_MODEL || 'nova-3-general' }}
+          DEEPGRAM_STT_LANGUAGE: ${{ vars.DEEPGRAM_STT_LANGUAGE || 'en' }}
+          GEMINI_LLM_MODEL: ${{ vars.GEMINI_LLM_MODEL || 'gemini-2.5-flash-lite' }}
+          ELEVENLABS_TTS_MODEL: ${{ vars.ELEVENLABS_TTS_MODEL || 'eleven_multilingual_v2' }}
+          ELEVENLABS_TTS_LANGUAGE: ${{ vars.ELEVENLABS_TTS_LANGUAGE || 'en' }}
+          PREEMPTIVE_GENERATION: ${{ vars.PREEMPTIVE_GENERATION || 'true' }}
+          LOG_LEVEL: ${{ vars.LOG_LEVEL || 'info' }}
+          DEBUG_MODE: ${{ vars.DEBUG_MODE || 'false' }}
         timeout-minutes: 10
         run: |
           set -euo pipefail
 
-          # Package only what Docker needs + env if present
+          # Package only what Docker needs. The env file is uploaded separately
+          # from GitHub secrets/variables so it never has to be committed.
           FILES="Dockerfile .dockerignore pyproject.toml uv.lock src/"
-          if [ -f .env.encoded ]; then FILES="$FILES .env.encoded"; fi
           tar -czf /tmp/my-agent.tar.gz $FILES
+
+          write_env() {
+            local name="$1"
+            local value="${2:-}"
+            if [ -n "$value" ]; then
+              printf "%s=%s\n" "$name" "$value" >> /tmp/my-agent.env.local
+            fi
+          }
+
+          require_env() {
+            local name="$1"
+            local value="${!name:-}"
+            if [ -z "$value" ]; then
+              echo "::error::Missing required repository secret or variable: $name"
+              exit 1
+            fi
+          }
+
+          if [ -n "${ENV_LOCAL:-}" ]; then
+            printf "%s\n" "$ENV_LOCAL" > /tmp/my-agent.env.local
+          else
+            require_env LIVEKIT_API_KEY
+            require_env LIVEKIT_API_SECRET
+            require_env SERPAPI_API_KEY
+            require_env GOOGLE_API_KEY
+            require_env DEEPGRAM_API_KEY
+            if [ -z "${ELEVENLABS_API_KEY:-}" ] && [ -z "${ELEVEN_API_KEY:-}" ]; then
+              echo "::error::Missing required repository secret: ELEVENLABS_API_KEY or ELEVEN_API_KEY"
+              exit 1
+            fi
+
+            : > /tmp/my-agent.env.local
+            write_env LIVEKIT_URL "${LIVEKIT_URL:-ws://localhost:7880}"
+            write_env LIVEKIT_API_KEY "$LIVEKIT_API_KEY"
+            write_env LIVEKIT_API_SECRET "$LIVEKIT_API_SECRET"
+            write_env LIVEKIT_AGENT_NAME "${LIVEKIT_AGENT_NAME:-my-agent}"
+            write_env SERPAPI_API_KEY "$SERPAPI_API_KEY"
+            write_env GOOGLE_API_KEY "$GOOGLE_API_KEY"
+            write_env ELEVENLABS_API_KEY "$ELEVENLABS_API_KEY"
+            write_env ELEVEN_API_KEY "$ELEVEN_API_KEY"
+            write_env ELEVENLABS_VOICE_ID "${ELEVENLABS_VOICE_ID:-cgSgspJ2msm6clMCkdW9}"
+            write_env DEEPGRAM_API_KEY "$DEEPGRAM_API_KEY"
+            write_env DEEPGRAM_STT_MODEL "${DEEPGRAM_STT_MODEL:-nova-3-general}"
+            write_env DEEPGRAM_STT_LANGUAGE "${DEEPGRAM_STT_LANGUAGE:-en}"
+            write_env GEMINI_LLM_MODEL "${GEMINI_LLM_MODEL:-gemini-2.5-flash-lite}"
+            write_env ELEVENLABS_TTS_MODEL "${ELEVENLABS_TTS_MODEL:-eleven_multilingual_v2}"
+            write_env ELEVENLABS_TTS_LANGUAGE "${ELEVENLABS_TTS_LANGUAGE:-en}"
+            write_env PREEMPTIVE_GENERATION "${PREEMPTIVE_GENERATION:-true}"
+            write_env LOG_LEVEL "${LOG_LEVEL:-info}"
+            write_env DEBUG_MODE "${DEBUG_MODE:-false}"
+          fi
+          chmod 600 /tmp/my-agent.env.local
 
           # Single SSH session: upload, build, run
           SSH="ssh -i ~/.ssh/ec2_key -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -p ${{ env.SSH_PORT }}"
           SCP="scp -i ~/.ssh/ec2_key -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 -C -P ${{ env.SSH_PORT }}"
 
           $SCP /tmp/my-agent.tar.gz "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/tmp/my-agent.tar.gz"
+          $SCP /tmp/my-agent.env.local "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/tmp/my-agent.env.local"
 
           $SSH "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}" "
             set -euo pipefail
@@ -110,14 +183,10 @@ jobs:
             sudo chown -R '${{ secrets.EC2_USER }}':'${{ secrets.EC2_USER }}' '${{ env.APP_DIR }}'
             rm -f /tmp/my-agent.tar.gz
 
-            # Decrypt env file if .env.encoded was included, otherwise keep existing
-            if [ -f '${{ env.APP_DIR }}/.env.encoded' ]; then
-              openssl enc -aes-256-cbc -pbkdf2 -a -d \
-                -in '${{ env.APP_DIR }}/.env.encoded' \
-                -out '${{ env.ENV_FILE }}' \
-                -pass pass:'${{ secrets.ENV_LOCAL_B64 }}'
-              rm -f '${{ env.APP_DIR }}/.env.encoded'
-            fi
+            # Install env file generated from GitHub secrets/variables.
+            sudo mv /tmp/my-agent.env.local '${{ env.ENV_FILE }}'
+            sudo chmod 600 '${{ env.ENV_FILE }}'
+            sudo chown '${{ secrets.EC2_USER }}':'${{ secrets.EC2_USER }}' '${{ env.ENV_FILE }}'
 
             # Build and run
             cd '${{ env.APP_DIR }}'

@@ -41,7 +41,7 @@ deepgram_model = os.getenv("DEEPGRAM_STT_MODEL", "nova-3")
 deepgram_language = os.getenv("DEEPGRAM_STT_LANGUAGE", "en")
 elevenlabs_model = os.getenv("ELEVENLABS_TTS_MODEL", "eleven_flash_v2_5")
 elevenlabs_language = os.getenv("ELEVENLABS_TTS_LANGUAGE", "en")
-gemini_model = os.getenv("GEMINI_LLM_MODEL", "gemini-3-flash-preview")
+gemini_model = os.getenv("GEMINI_LLM_MODEL", "gemini-2.5-flash-lite")
 gemini_thinking_level = os.getenv("GEMINI_THINKING_LEVEL", "low")
 
 
