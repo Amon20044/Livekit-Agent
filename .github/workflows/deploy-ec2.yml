@@ -186,7 +186,7 @@ jobs:
             use_external_ip: true
             enable_loopback_candidate: false
           EOF
-              sudo chmod 600 /opt/livekit/egress.yaml /opt/livekit/ingress.yaml
+              sudo chmod 644 /opt/livekit/egress.yaml /opt/livekit/ingress.yaml
               cd /opt/livekit
               sudo docker-compose restart egress ingress livekit 2>/dev/null || true
             fi

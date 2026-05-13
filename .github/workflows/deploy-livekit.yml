@@ -173,7 +173,7 @@ jobs:
             use_external_ip: true
             enable_loopback_candidate: false
           EOF
-            sudo chmod 600 '${{ env.LIVEKIT_DIR }}/egress.yaml' '${{ env.LIVEKIT_DIR }}/ingress.yaml'
+            sudo chmod 644 '${{ env.LIVEKIT_DIR }}/egress.yaml' '${{ env.LIVEKIT_DIR }}/ingress.yaml'
 
             # Install systemd service
             sudo cp '${{ env.LIVEKIT_DIR }}/livekit-docker.service' /etc/systemd/system/livekit-docker.service
