@@ -19,6 +19,8 @@ def test_anchor_agent_is_search_focused_and_has_serpapi_tools() -> None:
     assert "Anchor" in agent.instructions
     assert "latest news" in agent.instructions
     assert "search_ai_mode" in agent.instructions
+    assert "Yes, sure, let me search that for you" not in agent.instructions
+    assert "Never repeat or paraphrase it" in agent.instructions
     assert agent.tools == [search_latest_news, search_ai_mode]
 
 

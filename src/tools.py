@@ -20,9 +20,17 @@ def _clean_env(name: str) -> str | None:
 async def _announce_search(context: RunContext | None) -> None:
     if context is None:
         return
+    if getattr(context, "_anchor_search_announced", False):
+        return
+
+    context._anchor_search_announced = True
 
     await context.session.generate_reply(
-        instructions="Say warmly and briefly: Yes, sure, let me search that for you. It may take some seconds to get the results."
+        instructions=(
+            "Say one very short search status update, using natural varied wording. "
+            "Keep it under five words and do not mention timing. "
+            "Examples: 'I'll check that now.' or 'Let me look that up.'"
+        )
     )
     if hasattr(context, "wait_for_playout"):
         await context.wait_for_playout()
