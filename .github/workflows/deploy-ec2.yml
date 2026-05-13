@@ -33,11 +33,43 @@ jobs:
 
       - name: Setup SSH
         shell: bash
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_PRIVATE_KEY: ${{ secrets.EC2_PRIVATE_KEY }}
         run: |
+          set -euo pipefail
+          if [ -z "$EC2_HOST" ]; then
+            echo "::error::Missing required repository secret: EC2_HOST"
+            exit 1
+          fi
+          if [ -z "$EC2_PRIVATE_KEY" ]; then
+            echo "::error::Missing required repository secret: EC2_PRIVATE_KEY"
+            exit 1
+          fi
+
           install -m 700 -d ~/.ssh
-          printf "%s\n" "${{ secrets.EC2_PRIVATE_KEY }}" > ~/.ssh/ec2_key
+          printf "%s\n" "$EC2_PRIVATE_KEY" > ~/.ssh/ec2_key
           chmod 600 ~/.ssh/ec2_key
-          ssh-keyscan -p "${{ env.SSH_PORT }}" -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null || true
+          ssh-keygen -y -f ~/.ssh/ec2_key >/dev/null
+          ssh-keyscan -p "${{ env.SSH_PORT }}" -H "$EC2_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Verify SSH access
+        shell: bash
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+        run: |
+          set -euo pipefail
+          if [ -z "$EC2_USER" ]; then
+            echo "::error::Missing required repository secret: EC2_USER"
+            exit 1
+          fi
+
+          SSH="ssh -i ~/.ssh/ec2_key -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=yes -p ${{ env.SSH_PORT }}"
+          if ! $SSH "$EC2_USER@$EC2_HOST" "echo ssh-ready"; then
+            echo "::error::SSH authentication failed. Check EC2_USER, EC2_HOST, EC2_PRIVATE_KEY, and that the key's public half is in ~/.ssh/authorized_keys on the EC2 host."
+            exit 1
+          fi
 
       - name: Deploy
         shell: bash
@@ -51,8 +83,8 @@ jobs:
           tar -czf /tmp/my-agent.tar.gz $FILES
 
           # Single SSH session: upload, build, run
-          SSH="ssh -i ~/.ssh/ec2_key -o IdentitiesOnly=yes -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -p ${{ env.SSH_PORT }}"
-          SCP="scp -i ~/.ssh/ec2_key -o IdentitiesOnly=yes -o ConnectTimeout=15 -C -P ${{ env.SSH_PORT }}"
+          SSH="ssh -i ~/.ssh/ec2_key -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -p ${{ env.SSH_PORT }}"
+          SCP="scp -i ~/.ssh/ec2_key -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 -C -P ${{ env.SSH_PORT }}"
 
           $SCP /tmp/my-agent.tar.gz "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/tmp/my-agent.tar.gz"
 
@@ -102,7 +134,7 @@ jobs:
         shell: bash
         timeout-minutes: 3
         run: |
-          SSH="ssh -i ~/.ssh/ec2_key -o IdentitiesOnly=yes -o ServerAliveInterval=10 -p ${{ env.SSH_PORT }}"
+          SSH="ssh -i ~/.ssh/ec2_key -o BatchMode=yes -o IdentitiesOnly=yes -o ServerAliveInterval=10 -p ${{ env.SSH_PORT }}"
           RESULT="FAIL"
           REASON=""
           for i in $(seq 1 30); do
