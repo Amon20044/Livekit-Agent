@@ -69,8 +69,17 @@ jobs:
 
       - name: Deploy LiveKit infrastructure
         timeout-minutes: 10
+        env:
+          ENV_LOCAL: ${{ secrets.ENV_LOCAL }}
         run: |
           set -euo pipefail
+          if [ -z "${ENV_LOCAL:-}" ]; then
+            echo "::error::Missing required repository secret: ENV_LOCAL"
+            echo "::error::ENV_LOCAL must contain the full .env.local file contents."
+            exit 1
+          fi
+          printf "%s\n" "$ENV_LOCAL" > /tmp/my-agent.env.local
+          chmod 600 /tmp/my-agent.env.local
 
           SSH="ssh -i ~/.ssh/ec2_key -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -p ${{ env.SSH_PORT }}"
           SCP="scp -i ~/.ssh/ec2_key -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 -C -P ${{ env.SSH_PORT }}"
@@ -82,6 +91,7 @@ jobs:
 
           # Upload
           $SCP /tmp/livekit-configs.tar.gz "$REMOTE:/tmp/livekit-configs.tar.gz"
+          $SCP /tmp/my-agent.env.local "$REMOTE:/tmp/my-agent.env.local"
 
           # Apply configs and restart
           $SSH "$REMOTE" "
@@ -99,6 +109,63 @@ jobs:
             sudo tar -xzf /tmp/livekit-configs.tar.gz -C '${{ env.LIVEKIT_DIR }}'
             sudo chmod 755 '${{ env.LIVEKIT_DIR }}/update_ip.sh'
             rm -f /tmp/livekit-configs.tar.gz
+
+            # Install the exact ENV_LOCAL secret for the agent and derive
+            # LiveKit service configs from the same keypair.
+            sudo mv /tmp/my-agent.env.local /etc/my-agent.env
+            sudo chmod 600 /etc/my-agent.env
+            sudo chown root:root /etc/my-agent.env
+            if [ -d /opt/my-agent ]; then
+              sudo cp /etc/my-agent.env /opt/my-agent/.env.local
+              sudo chmod 600 /opt/my-agent/.env.local
+              sudo chown '${{ secrets.EC2_USER }}':'${{ secrets.EC2_USER }}' /opt/my-agent/.env.local
+            fi
+
+            set -a
+            . /etc/my-agent.env
+            set +a
+            : \"\${LIVEKIT_API_KEY:?LIVEKIT_API_KEY missing from ENV_LOCAL}\"
+            : \"\${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET missing from ENV_LOCAL}\"
+            LIVEKIT_PUBLIC_URL=\"\${LIVEKIT_PUBLIC_URL:-wss://livekit.amonsharma.com}\"
+
+            sudo env LIVEKIT_API_KEY=\"\$LIVEKIT_API_KEY\" LIVEKIT_API_SECRET=\"\$LIVEKIT_API_SECRET\" python3 - <<'PY'
+          from pathlib import Path
+          import os
+          import re
+
+          path = Path('/opt/livekit/livekit.yaml')
+          text = path.read_text()
+          replacement = f\"keys:\\n    {os.environ['LIVEKIT_API_KEY']}: {os.environ['LIVEKIT_API_SECRET']}\\n\"
+          if re.search(r'(?ms)^keys:\\n(?:^[ \\t]+[^\\n]*\\n?)+', text):
+              text = re.sub(r'(?ms)^keys:\\n(?:^[ \\t]+[^\\n]*\\n?)+', replacement, text)
+          else:
+              text = text.rstrip() + \"\\n\" + replacement
+          path.write_text(text)
+          PY
+
+            sudo rm -rf '${{ env.LIVEKIT_DIR }}/egress.yaml' '${{ env.LIVEKIT_DIR }}/ingress.yaml'
+            sudo tee '${{ env.LIVEKIT_DIR }}/egress.yaml' >/dev/null <<EOF
+          redis:
+            address: localhost:6379
+          api_key: \${LIVEKIT_API_KEY}
+          api_secret: \${LIVEKIT_API_SECRET}
+          ws_url: \${LIVEKIT_PUBLIC_URL}
+          EOF
+            sudo tee '${{ env.LIVEKIT_DIR }}/ingress.yaml' >/dev/null <<EOF
+          redis:
+            address: localhost:6379
+          api_key: \${LIVEKIT_API_KEY}
+          api_secret: \${LIVEKIT_API_SECRET}
+          ws_url: \${LIVEKIT_PUBLIC_URL}
+          rtmp_port: 1935
+          whip_port: 8080
+          http_relay_port: 9090
+          rtc_config:
+            udp_port: 7885
+            use_external_ip: true
+            enable_loopback_candidate: false
+          EOF
+            sudo chmod 600 '${{ env.LIVEKIT_DIR }}/egress.yaml' '${{ env.LIVEKIT_DIR }}/ingress.yaml'
 
             # Install systemd service
             sudo cp '${{ env.LIVEKIT_DIR }}/livekit-docker.service' /etc/systemd/system/livekit-docker.service

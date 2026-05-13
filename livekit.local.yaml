@@ -4,10 +4,10 @@ bind_addresses:
 rtc:
     tcp_port: 7881
     port_range_start: 50000
-    port_range_end: 60000
+    port_range_end: 50100
     use_external_ip: false
     enable_loopback_candidate: false
 redis:
     address: redis:6379
 keys:
-    APIFmXGKZsHWkcA: dP5KujdtOXxTKXU4E5ko56t22gvGfoqk5DXcZOkuafE
+    APIczEe4hqR7b4t: SUL2AbREZQmzsRHy670iyQKZ6urBqHx0FUbmJKOGlHD

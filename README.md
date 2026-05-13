@@ -165,10 +165,9 @@ Before using it:
   - `EC2_HOST` (public IP or DNS)
   - `EC2_USER` (for example `ec2-user`)
   - `EC2_PRIVATE_KEY` (contents of your `.pem` key)
-- Create an env file on EC2 (default: `/etc/my-agent.env`) with:
-  - `LIVEKIT_URL`
-  - `LIVEKIT_API_KEY`
-  - `LIVEKIT_API_SECRET`
+  - `ENV_LOCAL` (the full contents of your production `.env.local` file)
+
+The workflow writes `ENV_LOCAL` to `/etc/my-agent.env` and `/opt/my-agent/.env.local` on EC2. It also derives `/opt/livekit/egress.yaml`, `/opt/livekit/ingress.yaml`, and the LiveKit server key block from the same `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` values.
 
 How to run:
 

@@ -17,11 +17,19 @@ services:
     restart: unless-stopped
 
   agent:
-    build: .
+    image: ghcr.io/astral-sh/uv:python3.13-bookworm-slim
+    working_dir: /app
+    command: >
+      sh -lc "uv sync --locked &&
+      uv run python src/agent.py download-files &&
+      uv run python src/agent.py start"
+    volumes:
+      - .:/app
+    environment:
+      - UV_PROJECT_ENVIRONMENT=/tmp/agent-venv
+      - LIVEKIT_URL=ws://livekit:7880
     restart: unless-stopped
     env_file:
       - .env.local
-    environment:
-      - LIVEKIT_URL=ws://livekit:7880
     depends_on:
       - livekit
