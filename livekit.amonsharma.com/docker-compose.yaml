@@ -30,7 +30,7 @@ services:
       - EGRESS_CONFIG_FILE=/etc/egress.yaml
     network_mode: "host"
     volumes:
-      - ./egress.yaml:/etc/egress.yaml
+      - ./egress.yaml:/etc/egress.yaml:ro,Z
     cap_add:
       - CAP_SYS_ADMIN
   ingress:
@@ -40,4 +40,4 @@ services:
       - INGRESS_CONFIG_FILE=/etc/ingress.yaml
     network_mode: "host"
     volumes:
-      - ./ingress.yaml:/etc/ingress.yaml
+      - ./ingress.yaml:/etc/ingress.yaml:ro,Z

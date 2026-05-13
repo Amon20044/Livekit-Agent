@@ -187,6 +187,9 @@ jobs:
             enable_loopback_candidate: false
           EOF
               sudo chmod 644 /opt/livekit/egress.yaml /opt/livekit/ingress.yaml
+              if command -v selinuxenabled >/dev/null 2>&1 && selinuxenabled; then
+                sudo chcon -t container_file_t /opt/livekit/egress.yaml /opt/livekit/ingress.yaml || true
+              fi
               cd /opt/livekit
               sudo docker-compose restart egress ingress livekit 2>/dev/null || true
             fi

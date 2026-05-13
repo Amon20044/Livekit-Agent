@@ -9,8 +9,10 @@ packages:
   - docker
 
 bootcmd:
+  - mkdir -p /opt/livekit
   - mkdir -p /opt/livekit/caddy_data
   - mkdir -p /usr/local/bin
+  - rm -rf /opt/livekit/egress.yaml /opt/livekit/ingress.yaml
 
 write_files:
   - path: /opt/livekit/livekit.yaml
@@ -144,7 +146,7 @@ write_files:
             - EGRESS_CONFIG_FILE=/etc/egress.yaml
           network_mode: "host"
           volumes:
-            - ./egress.yaml:/etc/egress.yaml
+            - ./egress.yaml:/etc/egress.yaml:ro,Z
           cap_add:
             - CAP_SYS_ADMIN
         ingress:
@@ -154,7 +156,7 @@ write_files:
             - INGRESS_CONFIG_FILE=/etc/ingress.yaml
           network_mode: "host"
           volumes:
-            - ./ingress.yaml:/etc/ingress.yaml
+            - ./ingress.yaml:/etc/ingress.yaml:ro,Z
       
 
   - path: /etc/systemd/system/livekit-docker.service
@@ -240,6 +242,11 @@ runcmd:
   - curl -L "https://github.com/docker/compose/releases/download/v5.0.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
   - chmod 755 /usr/local/bin/docker-compose
   - chmod 755 /opt/livekit/update_ip.sh
+  - chmod 644 /opt/livekit/egress.yaml /opt/livekit/ingress.yaml
+  - |
+      if command -v selinuxenabled >/dev/null 2>&1 && selinuxenabled; then
+        chcon -t container_file_t /opt/livekit/egress.yaml /opt/livekit/ingress.yaml || true
+      fi
   - /opt/livekit/update_ip.sh
   - systemctl enable docker
   - systemctl start docker
