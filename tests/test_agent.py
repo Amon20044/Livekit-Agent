@@ -13,6 +13,7 @@ from agent import (
     _env_float,
     _env_int,
     _format_cost_summary,
+    _loggable_costs,
     _plugin_model,
     _session_costs,
 )
@@ -128,6 +129,12 @@ def test_cost_delta_and_summary_format() -> None:
     assert _format_cost_summary(delta) == (
         "deepgram=$0.010000 llm=$0.020000 elevenlabs=$0.010000 total=$0.040000"
     )
+    assert _loggable_costs(delta) == {
+        "deepgram": "$0.010000",
+        "llm": "$0.020000",
+        "elevenlabs": "$0.010000",
+        "total": "$0.040000",
+    }
 
 
 def test_background_audio_can_be_disabled(monkeypatch) -> None:

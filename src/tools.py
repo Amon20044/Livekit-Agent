@@ -1,6 +1,7 @@
 import logging
 import os
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 import aiohttp
 from livekit.agents import RunContext, function_tool
@@ -39,8 +40,37 @@ async def _serpapi_get(params: dict[str, str], timeout_seconds: int = 12) -> dic
         aiohttp.ClientSession(timeout=timeout) as session,
         session.get(SERPAPI_URL, params=params) as response,
     ):
-        response.raise_for_status()
-        return await response.json()
+        payload = await response.json(content_type=None)
+        if response.status >= 400:
+            raise SerpApiError(
+                response.status,
+                payload.get("error") or response.reason or "SerpApi request failed",
+            )
+        return payload
+
+
+class SerpApiError(Exception):
+    def __init__(self, status: int, message: str) -> None:
+        self.status = status
+        self.message = message
+        super().__init__(f"SerpApi returned {status}: {message}")
+
+
+def _redact_url(url: str) -> str:
+    parsed = urlsplit(str(url))
+    query_parts = [
+        part for part in parsed.query.split("&") if not part.startswith("api_key=")
+    ]
+    return urlunsplit(parsed._replace(query="&".join(query_parts)))
+
+
+def _log_serpapi_client_error(exc: aiohttp.ClientError) -> None:
+    url = getattr(getattr(exc, "request_info", None), "real_url", "")
+    logger.warning(
+        "SerpApi request failed: status=%s url=%s",
+        getattr(exc, "status", "unknown"),
+        _redact_url(str(url)) if url else "unknown",
+    )
 
 
 def _source_name(source: Any) -> str | None:
@@ -102,9 +132,21 @@ async def search_latest_news(
     except TimeoutError:
         logger.warning("SerpApi news search timed out for query=%s", query)
         return "The live news search timed out. Please try again in a moment."
-    except (aiohttp.ClientError, ValueError) as exc:
-        logger.exception("SerpApi news search failed")
-        return f"The live news search failed: {exc}"
+    except SerpApiError as exc:
+        logger.warning(
+            "SerpApi news search failed: status=%s message=%s query=%r location=%r",
+            exc.status,
+            exc.message,
+            query,
+            location,
+        )
+        return "The live news search failed, but your API key was not exposed in logs."
+    except aiohttp.ClientError as exc:
+        _log_serpapi_client_error(exc)
+        return "The live news search failed because the search service could not be reached."
+    except ValueError:
+        logger.warning("SerpApi news search returned invalid JSON")
+        return "The live news search returned an invalid response."
 
 
 @function_tool
@@ -132,7 +174,20 @@ async def search_ai_mode(
     }
 
     try:
-        payload = await _serpapi_get(params, timeout_seconds=20)
+        try:
+            payload = await _serpapi_get(params, timeout_seconds=20)
+        except SerpApiError as exc:
+            if exc.status != 400 or location == "United States":
+                raise
+
+            logger.warning(
+                "SerpApi AI Mode rejected location=%r for query=%r; retrying without location",
+                location,
+                query,
+            )
+            fallback_params = dict(params)
+            fallback_params.pop("location", None)
+            payload = await _serpapi_get(fallback_params, timeout_seconds=20)
 
         answer = payload.get("reconstructed_markdown")
         if not answer:
@@ -166,6 +221,18 @@ async def search_ai_mode(
     except TimeoutError:
         logger.warning("SerpApi AI Mode search timed out for query=%s", query)
         return "The Google AI Mode search timed out. Please try again in a moment."
-    except (aiohttp.ClientError, ValueError) as exc:
-        logger.exception("SerpApi AI Mode search failed")
-        return f"The Google AI Mode search failed: {exc}"
+    except SerpApiError as exc:
+        logger.warning(
+            "SerpApi AI Mode search failed: status=%s message=%s query=%r location=%r",
+            exc.status,
+            exc.message,
+            query,
+            location,
+        )
+        return "The Google AI Mode search failed, but your API key was not exposed in logs."
+    except aiohttp.ClientError as exc:
+        _log_serpapi_client_error(exc)
+        return "The Google AI Mode search failed because the search service could not be reached."
+    except ValueError:
+        logger.warning("SerpApi AI Mode returned invalid JSON")
+        return "The Google AI Mode search returned an invalid response."

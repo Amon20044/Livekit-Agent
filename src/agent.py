@@ -12,9 +12,9 @@ from livekit.agents import (
     BuiltinAudioClip,
     JobContext,
     JobProcess,
-    RoomInputOptions,
     SessionUsageUpdatedEvent,
     TurnHandlingOptions,
+    room_io,
 )
 from livekit.plugins import ai_coustics, deepgram, elevenlabs, google, silero
 from livekit.plugins.turn_detector.english import EnglishModel
@@ -196,6 +196,12 @@ def _format_cost_summary(costs: dict[str, float]) -> str:
     )
 
 
+def _loggable_costs(costs: dict[str, float]) -> dict[str, str]:
+    return {
+        key: _money(costs[key]) for key in ("deepgram", "llm", "elevenlabs", "total")
+    }
+
+
 def _build_llm_kwargs(model: str) -> dict[str, Any]:
     kwargs: dict[str, Any] = {
         "model": model,
@@ -366,15 +372,17 @@ def _build_background_audio_player() -> BackgroundAudioPlayer | None:
     )
 
 
-def _room_input_options() -> RoomInputOptions:
+def _room_options() -> room_io.RoomOptions:
+    audio_input = True
     if not _env_bool("ENABLE_NOISE_CANCELLATION", False):
-        return RoomInputOptions()
+        return room_io.RoomOptions(audio_input=audio_input)
 
-    return RoomInputOptions(
+    audio_input = room_io.AudioInputOptions(
         noise_cancellation=ai_coustics.audio_enhancement(
             model=ai_coustics.EnhancerModel.QUAIL_VF_L
         ),
     )
+    return room_io.RoomOptions(audio_input=audio_input)
 
 
 class AnchorVoiceAgent(Agent):
@@ -455,26 +463,32 @@ async def entrypoint(ctx: JobContext):
     )
 
     pricing = _pricing_config()
-    last_costs = {"deepgram": 0.0, "llm": 0.0, "elevenlabs": 0.0, "total": 0.0}
+    last_logged_costs = {
+        "deepgram": 0.0,
+        "llm": 0.0,
+        "elevenlabs": 0.0,
+        "total": 0.0,
+    }
 
     @session.on("session_usage_updated")
     def _on_session_usage_updated(ev: SessionUsageUpdatedEvent):
-        nonlocal last_costs
+        nonlocal last_logged_costs
 
         current_costs = _session_costs(ev.usage, pricing)
-        delta_costs = _cost_delta(current_costs, last_costs)
-        last_costs = current_costs
+        delta_costs = _cost_delta(current_costs, last_logged_costs)
 
-        if delta_costs["total"] == 0.0:
+        if delta_costs["llm"] == 0.0 and delta_costs["elevenlabs"] == 0.0:
             return
+
+        last_logged_costs = current_costs
 
         logger.info(
             "Turn cost delta: %s | call total: %s",
             _format_cost_summary(delta_costs),
             _format_cost_summary(current_costs),
             extra={
-                "cost_delta_usd": delta_costs,
-                "cost_total_usd": current_costs,
+                "cost_delta": _loggable_costs(delta_costs),
+                "cost_total": _loggable_costs(current_costs),
             },
         )
 
@@ -483,7 +497,7 @@ async def entrypoint(ctx: JobContext):
         logger.info(
             "Session ended. Final call cost: %s",
             _format_cost_summary(final_costs),
-            extra={"cost_total_usd": final_costs},
+            extra={"cost_total": _loggable_costs(final_costs)},
         )
 
     ctx.add_shutdown_callback(log_usage)
@@ -499,7 +513,7 @@ async def entrypoint(ctx: JobContext):
     await session.start(
         room=ctx.room,
         agent=AnchorVoiceAgent(),
-        room_input_options=_room_input_options(),
+        room_options=_room_options(),
     )
 
     if background_audio is not None:
