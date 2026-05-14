@@ -6,6 +6,7 @@ from agent import (
     AnchorVoiceAgent,
     BuiltinAudioClip,
     _build_background_audio_player,
+    _build_llm,
     _build_llm_kwargs,
     _build_turn_handling_options,
     _cost_delta,
@@ -16,6 +17,7 @@ from agent import (
     _loggable_costs,
     _plugin_model,
     _session_costs,
+    llm,
 )
 from tools import search_ai_mode, search_latest_news
 
@@ -79,14 +81,31 @@ def test_turn_handling_defaults_are_low_latency(monkeypatch) -> None:
     assert options["preemptive_generation"]["preemptive_tts"] is True
 
 
-def test_gemini_25_defaults_to_no_extra_thinking(monkeypatch) -> None:
+def test_gemini_25_defaults_to_dynamic_thinking_and_roomy_output(monkeypatch) -> None:
     monkeypatch.delenv("GEMINI_THINKING_BUDGET", raising=False)
     monkeypatch.delenv("GEMINI_MAX_OUTPUT_TOKENS", raising=False)
 
     kwargs = _build_llm_kwargs("gemini-2.5-flash-lite")
 
-    assert kwargs["thinking_config"] == {"thinking_budget": 0}
-    assert kwargs["max_output_tokens"] == 220
+    assert kwargs["thinking_config"] == {"thinking_budget": -1}
+    assert kwargs["max_output_tokens"] == 640
+
+
+def test_llm_uses_fallback_adapter_by_default(monkeypatch) -> None:
+    monkeypatch.delenv("GEMINI_FALLBACK_ENABLED", raising=False)
+    monkeypatch.delenv("GEMINI_FALLBACK_LLM_MODEL", raising=False)
+
+    model = _build_llm("gemini-2.5-flash-lite")
+
+    assert isinstance(model, llm.FallbackAdapter)
+
+
+def test_llm_fallback_can_be_disabled(monkeypatch) -> None:
+    monkeypatch.setenv("GEMINI_FALLBACK_ENABLED", "false")
+
+    model = _build_llm("gemini-2.5-flash-lite")
+
+    assert not isinstance(model, llm.FallbackAdapter)
 
 
 def test_session_costs_include_deepgram_gemini_and_elevenlabs() -> None:

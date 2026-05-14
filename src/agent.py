@@ -10,10 +10,12 @@ from livekit.agents import (
     AudioConfig,
     BackgroundAudioPlayer,
     BuiltinAudioClip,
+    ErrorEvent,
     JobContext,
     JobProcess,
     SessionUsageUpdatedEvent,
     TurnHandlingOptions,
+    llm,
     room_io,
 )
 from livekit.plugins import ai_coustics, deepgram, elevenlabs, google, silero
@@ -46,7 +48,8 @@ elevenlabs_model = os.getenv("ELEVENLABS_TTS_MODEL", "eleven_flash_v2_5")
 elevenlabs_language = os.getenv("ELEVENLABS_TTS_LANGUAGE", "en")
 gemini_model = os.getenv("GEMINI_LLM_MODEL", "gemini-2.5-flash-lite")
 gemini_thinking_level = os.getenv("GEMINI_THINKING_LEVEL", "low")
-gemini_thinking_budget = os.getenv("GEMINI_THINKING_BUDGET", "0")
+gemini_thinking_budget = os.getenv("GEMINI_THINKING_BUDGET", "-1")
+gemini_fallback_model = os.getenv("GEMINI_FALLBACK_LLM_MODEL", "gemini-2.5-flash")
 
 
 def _money(value: float) -> str:
@@ -207,23 +210,48 @@ def _build_llm_kwargs(model: str) -> dict[str, Any]:
         "model": model,
         "api_key": google_api_key,
         "temperature": _env_float(
-            "GEMINI_TEMPERATURE", 0.35, min_value=0.0, max_value=2.0
+            "GEMINI_TEMPERATURE", 0.45, min_value=0.0, max_value=2.0
         ),
-        "max_output_tokens": _env_int("GEMINI_MAX_OUTPUT_TOKENS", 220, min_value=32),
+        "max_output_tokens": _env_int("GEMINI_MAX_OUTPUT_TOKENS", 640, min_value=128),
     }
 
     if model.startswith("gemini-2.5"):
         kwargs["thinking_config"] = {
             "thinking_budget": _env_int(
                 "GEMINI_THINKING_BUDGET",
-                int(gemini_thinking_budget or "0"),
-                min_value=0,
+                -1,
+                min_value=-1,
             )
         }
     elif model.startswith("gemini-3"):
         kwargs["thinking_config"] = {"thinking_level": gemini_thinking_level}
 
     return kwargs
+
+
+def _build_llm(model: str) -> llm.LLM:
+    primary = google.LLM(**_build_llm_kwargs(model))
+
+    if not _env_bool("GEMINI_FALLBACK_ENABLED", True):
+        return primary
+
+    fallback_model = _plugin_model(gemini_fallback_model, "google")
+    if fallback_model == model:
+        return primary
+
+    fallback = google.LLM(**_build_llm_kwargs(fallback_model))
+    return llm.FallbackAdapter(
+        [primary, fallback],
+        attempt_timeout=_env_float(
+            "GEMINI_FALLBACK_ATTEMPT_TIMEOUT", 12.0, min_value=1.0, max_value=60.0
+        ),
+        max_retry_per_llm=_env_int(
+            "GEMINI_FALLBACK_MAX_RETRY_PER_LLM", 0, min_value=0, max_value=3
+        ),
+        retry_interval=_env_float(
+            "GEMINI_FALLBACK_RETRY_INTERVAL", 0.2, min_value=0.0, max_value=5.0
+        ),
+    )
 
 
 def _build_turn_handling_options(
@@ -448,7 +476,7 @@ async def entrypoint(ctx: JobContext):
             smart_format=_env_bool("DEEPGRAM_SMART_FORMAT", False),
             filler_words=_env_bool("DEEPGRAM_FILLER_WORDS", False),
         ),
-        llm=google.LLM(**_build_llm_kwargs(llm_model)),
+        llm=_build_llm(llm_model),
         tts=_build_tts(tts_model),
         turn_handling=_build_turn_handling_options(),
         vad=ctx.proc.userdata["vad"],
@@ -491,6 +519,22 @@ async def entrypoint(ctx: JobContext):
                 "cost_total": _loggable_costs(current_costs),
             },
         )
+
+    @session.on("error")
+    def _on_error(ev: ErrorEvent):
+        error_text = str(ev.error)
+        if "no response generated" not in error_text:
+            return
+
+        logger.warning("Recovering from empty LLM response: %s", error_text)
+        try:
+            session.say(
+                "I hit a temporary model hiccup. Please say that again.",
+                allow_interruptions=True,
+                add_to_chat_ctx=False,
+            )
+        except RuntimeError:
+            logger.warning("Could not speak LLM recovery message; session is closing")
 
     async def log_usage():
         final_costs = _session_costs(session.usage, pricing)
