@@ -18,8 +18,8 @@ from livekit.agents import (
     llm,
     room_io,
 )
-from livekit.plugins import ai_coustics, deepgram, elevenlabs, google, silero
-from livekit.plugins.turn_detector.english import EnglishModel
+from livekit.plugins import ai_coustics, deepgram, google, sarvam, silero
+from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
 from tools import search_ai_mode, search_latest_news
 
@@ -38,14 +38,14 @@ AGENT_NAME = os.getenv("LIVEKIT_AGENT_NAME", "my-agent")
 # Provider API keys
 deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
 google_api_key = os.getenv("GOOGLE_API_KEY")
-elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY") or os.getenv("ELEVEN_API_KEY")
+sarvam_api_key = os.getenv("SARVAM_API_KEY")
 
 # Model config
-elevenlabs_voice_id = os.getenv("ELEVENLABS_VOICE_ID", "cgSgspJ2msm6clMCkdW9")
 deepgram_model = os.getenv("DEEPGRAM_STT_MODEL", "nova-3")
-deepgram_language = os.getenv("DEEPGRAM_STT_LANGUAGE", "en")
-elevenlabs_model = os.getenv("ELEVENLABS_TTS_MODEL", "eleven_flash_v2_5")
-elevenlabs_language = os.getenv("ELEVENLABS_TTS_LANGUAGE", "en")
+deepgram_language = os.getenv("DEEPGRAM_STT_LANGUAGE", "multi")
+sarvam_model = os.getenv("SARVAM_TTS_MODEL", "bulbul:v3")
+sarvam_target_language_code = os.getenv("SARVAM_TARGET_LANGUAGE_CODE", "hi-IN")
+sarvam_speaker = os.getenv("SARVAM_SPEAKER", "shubh")
 gemini_model = os.getenv("GEMINI_LLM_MODEL", "gemini-2.5-flash-lite")
 gemini_thinking_level = os.getenv("GEMINI_THINKING_LEVEL", "low")
 gemini_thinking_budget = os.getenv("GEMINI_THINKING_BUDGET", "-1")
@@ -137,16 +137,16 @@ def _pricing_config() -> dict[str, float]:
             0.40,
             min_value=0.0,
         ),
-        "elevenlabs_tts_per_1k_chars": _env_float(
-            "COST_ELEVENLABS_TTS_PER_1K_CHARS_USD",
-            0.05,
+        "sarvam_tts_per_1k_chars": _env_float(
+            "COST_SARVAM_TTS_PER_1K_CHARS_USD",
+            0.02,
             min_value=0.0,
         ),
     }
 
 
 def _usage_costs(usage: Any, pricing: dict[str, float]) -> dict[str, float]:
-    costs = {"deepgram": 0.0, "llm": 0.0, "elevenlabs": 0.0}
+    costs = {"deepgram": 0.0, "llm": 0.0, "sarvam": 0.0}
 
     if usage.type == "stt_usage":
         costs["deepgram"] = (
@@ -162,15 +162,15 @@ def _usage_costs(usage: Any, pricing: dict[str, float]) -> dict[str, float]:
             + usage.output_tokens / 1_000_000.0 * pricing["gemini_output_per_1m"]
         )
     elif usage.type == "tts_usage":
-        costs["elevenlabs"] = (
-            usage.characters_count / 1_000.0 * pricing["elevenlabs_tts_per_1k_chars"]
+        costs["sarvam"] = (
+            usage.characters_count / 1_000.0 * pricing["sarvam_tts_per_1k_chars"]
         )
 
     return costs
 
 
 def _session_costs(session_usage: Any, pricing: dict[str, float]) -> dict[str, float]:
-    totals = {"deepgram": 0.0, "llm": 0.0, "elevenlabs": 0.0}
+    totals = {"deepgram": 0.0, "llm": 0.0, "sarvam": 0.0}
 
     for usage in session_usage.model_usage:
         for provider, cost in _usage_costs(usage, pricing).items():
@@ -186,7 +186,7 @@ def _cost_delta(
 ) -> dict[str, float]:
     return {
         key: max(current.get(key, 0.0) - previous.get(key, 0.0), 0.0)
-        for key in ("deepgram", "llm", "elevenlabs", "total")
+        for key in ("deepgram", "llm", "sarvam", "total")
     }
 
 
@@ -194,15 +194,13 @@ def _format_cost_summary(costs: dict[str, float]) -> str:
     return (
         f"deepgram={_money(costs['deepgram'])} "
         f"llm={_money(costs['llm'])} "
-        f"elevenlabs={_money(costs['elevenlabs'])} "
+        f"sarvam={_money(costs['sarvam'])} "
         f"total={_money(costs['total'])}"
     )
 
 
 def _loggable_costs(costs: dict[str, float]) -> dict[str, str]:
-    return {
-        key: _money(costs[key]) for key in ("deepgram", "llm", "elevenlabs", "total")
-    }
+    return {key: _money(costs[key]) for key in ("deepgram", "llm", "sarvam", "total")}
 
 
 def _build_llm_kwargs(model: str) -> dict[str, Any]:
@@ -258,7 +256,7 @@ def _build_turn_handling_options(
     turn_detection: Any = _DEFAULT_TURN_DETECTION,
 ) -> TurnHandlingOptions:
     if turn_detection is _DEFAULT_TURN_DETECTION:
-        turn_detection = EnglishModel()
+        turn_detection = MultilingualModel()
 
     return TurnHandlingOptions(
         turn_detection=turn_detection,
@@ -299,33 +297,26 @@ def _build_turn_handling_options(
     )
 
 
-def _build_tts(model: str) -> elevenlabs.TTS:
-    return elevenlabs.TTS(
+def _build_tts(model: str) -> sarvam.TTS:
+    return sarvam.TTS(
         model=model,
-        voice_id=elevenlabs_voice_id,
-        api_key=elevenlabs_api_key,
-        language=elevenlabs_language,
-        streaming_latency=_env_int(
-            "ELEVENLABS_STREAMING_LATENCY", 3, min_value=0, max_value=4
+        target_language_code=sarvam_target_language_code,
+        speaker=sarvam_speaker,
+        api_key=sarvam_api_key,
+        pace=_env_float("SARVAM_PACE", 1.0, min_value=0.5, max_value=2.0),
+        temperature=_env_float(
+            "SARVAM_TEMPERATURE", 0.6, min_value=0.01, max_value=1.0
         ),
-        auto_mode=_env_bool("ELEVENLABS_AUTO_MODE", True),
-        chunk_length_schedule=[
-            _env_int("ELEVENLABS_CHUNK_1", 50, min_value=50),
-            _env_int("ELEVENLABS_CHUNK_2", 80, min_value=50),
-            _env_int("ELEVENLABS_CHUNK_3", 120, min_value=50),
-            _env_int("ELEVENLABS_CHUNK_4", 160, min_value=50),
-        ],
-        voice_settings=elevenlabs.VoiceSettings(
-            stability=_env_float(
-                "ELEVENLABS_STABILITY", 0.45, min_value=0.0, max_value=1.0
-            ),
-            similarity_boost=_env_float(
-                "ELEVENLABS_SIMILARITY_BOOST", 0.75, min_value=0.0, max_value=1.0
-            ),
-            speed=_env_float("ELEVENLABS_SPEED", 1.08, min_value=0.7, max_value=1.2),
-            use_speaker_boost=_env_bool("ELEVENLABS_SPEAKER_BOOST", False),
+        output_audio_bitrate=os.getenv("SARVAM_OUTPUT_AUDIO_BITRATE", "128k"),
+        min_buffer_size=_env_int(
+            "SARVAM_MIN_BUFFER_SIZE", 50, min_value=30, max_value=200
         ),
-        sync_alignment=_env_bool("ELEVENLABS_SYNC_ALIGNMENT", False),
+        max_chunk_length=_env_int(
+            "SARVAM_MAX_CHUNK_LENGTH", 150, min_value=50, max_value=500
+        ),
+        speech_sample_rate=_env_int(
+            "SARVAM_SPEECH_SAMPLE_RATE", 22050, min_value=8000, max_value=24000
+        ),
     )
 
 
@@ -419,6 +410,14 @@ class AnchorVoiceAgent(Agent):
             instructions="""
 You are Anchor, a fast voice-first news and current-events agent.
 
+# Language
+- Speak in Hindi by default, using natural conversational Hindi.
+- If the user speaks another language or explicitly asks for another language,
+  respond in that language.
+- Keep English names, product names, source names, and technical terms in English
+  when translating them would sound unnatural.
+- Do not announce that you are switching languages; just answer naturally.
+
 # Voice style
 - Speak in plain, natural language.
 - Keep answers brief by default, usually 1-3 sentences.
@@ -453,14 +452,16 @@ def prewarm(proc: JobProcess):
 async def entrypoint(ctx: JobContext):
     stt_model = _plugin_model(deepgram_model, "deepgram")
     llm_model = _plugin_model(gemini_model, "google")
-    tts_model = _plugin_model(elevenlabs_model, "elevenlabs")
+    tts_model = _plugin_model(sarvam_model, "sarvam")
 
     logger.info(
-        "Starting low-latency voice pipeline with stt=%s llm=%s tts=%s voice=%s",
+        "Starting low-latency multilingual voice pipeline with stt=%s:%s llm=%s tts=%s:%s speaker=%s",
         stt_model,
+        deepgram_language,
         llm_model,
         tts_model,
-        elevenlabs_voice_id,
+        sarvam_target_language_code,
+        sarvam_speaker,
     )
 
     session = AgentSession(
@@ -494,7 +495,7 @@ async def entrypoint(ctx: JobContext):
     last_logged_costs = {
         "deepgram": 0.0,
         "llm": 0.0,
-        "elevenlabs": 0.0,
+        "sarvam": 0.0,
         "total": 0.0,
     }
 
@@ -505,7 +506,7 @@ async def entrypoint(ctx: JobContext):
         current_costs = _session_costs(ev.usage, pricing)
         delta_costs = _cost_delta(current_costs, last_logged_costs)
 
-        if delta_costs["llm"] == 0.0 and delta_costs["elevenlabs"] == 0.0:
+        if delta_costs["llm"] == 0.0 and delta_costs["sarvam"] == 0.0:
             return
 
         last_logged_costs = current_costs

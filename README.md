@@ -147,7 +147,7 @@ This agent is tuned for a fast, lively voice experience: the user stops speaking
 The pipeline is:
 
 ```text
-microphone audio -> LiveKit room -> Deepgram STT -> turn handling -> Gemini LLM -> ElevenLabs TTS -> LiveKit room audio
+microphone audio -> LiveKit room -> Deepgram multilingual STT -> turn handling -> Gemini LLM -> Sarvam TTS -> LiveKit room audio
                                                 -> background ambience track
 ```
 
@@ -158,7 +158,7 @@ Voice latency is the sum of several small delays:
 - **Endpointing latency**: how long the system waits after silence before deciding the user is done.
 - **STT latency**: how quickly partial and final transcripts arrive.
 - **LLM first-token latency**: how quickly Gemini starts producing the answer.
-- **TTS first-audio latency**: how quickly ElevenLabs starts returning playable audio.
+- **TTS first-audio latency**: how quickly Sarvam starts returning playable audio.
 - **Network/media latency**: how fast LiveKit can route audio between the browser, server, and agent.
 
 The current defaults optimize the “first useful audio” path rather than maximum reasoning depth. That is why the agent uses low endpointing delays, interim transcripts, preemptive generation, small TTS chunks, a short max answer length, and Gemini thinking budget `0`.
@@ -168,14 +168,14 @@ Study links:
 - [LiveKit turn handling options](https://docs.livekit.io/reference/agents/turn-handling-options/)
 - [LiveKit speech and background audio](https://docs.livekit.io/agents/build/audio/)
 - [Deepgram STT integration for LiveKit Agents](https://docs.livekit.io/agents/integrations/deepgram/)
-- [ElevenLabs TTS integration for LiveKit Agents](https://docs.livekit.io/agents/models/tts/plugins/elevenlabs/)
+- [Sarvam TTS integration for LiveKit Agents](https://docs.livekit.io/agents/models/tts/sarvam/)
 - [Google Gemini thinking controls](https://ai.google.dev/gemini-api/docs/thinking)
 
 ### Turn Detection and Endpointing
 
 Turn detection answers: “Is the user still speaking, or should the agent answer now?”
 
-This project combines LiveKit turn handling with Silero VAD and the English turn detector. VAD detects speech versus silence from the audio signal. The turn detector adds linguistic context, so the agent can be less naive than “silence means done.”
+This project combines LiveKit turn handling with Silero VAD and the multilingual turn detector. VAD detects speech versus silence from the audio signal. The turn detector adds linguistic context across supported languages, so the agent can be less naive than “silence means done.”
 
 Important env values:
 
@@ -208,7 +208,7 @@ The agent uses Deepgram with:
 
 ```env
 DEEPGRAM_STT_MODEL=nova-3-general
-DEEPGRAM_STT_LANGUAGE=en
+DEEPGRAM_STT_LANGUAGE=multi
 DEEPGRAM_ENDPOINTING_MS=25
 DEEPGRAM_SMART_FORMAT=false
 DEEPGRAM_FILLER_WORDS=false
@@ -265,31 +265,28 @@ Study link:
 
 ### TTS Streaming
 
-The agent uses ElevenLabs Flash with streaming-focused options:
+The agent uses Sarvam Bulbul with streaming-focused options:
 
 ```env
-ELEVENLABS_TTS_MODEL=eleven_flash_v2_5
-ELEVENLABS_STREAMING_LATENCY=3
-ELEVENLABS_AUTO_MODE=true
-ELEVENLABS_SPEED=1.08
-ELEVENLABS_STABILITY=0.45
-ELEVENLABS_SIMILARITY_BOOST=0.75
-ELEVENLABS_SPEAKER_BOOST=false
-ELEVENLABS_SYNC_ALIGNMENT=false
+SARVAM_TTS_MODEL=bulbul:v3
+SARVAM_TARGET_LANGUAGE_CODE=hi-IN
+SARVAM_SPEAKER=shubh
+SARVAM_PACE=1.0
+SARVAM_TEMPERATURE=0.6
+SARVAM_MIN_BUFFER_SIZE=50
+SARVAM_MAX_CHUNK_LENGTH=150
 ```
 
-TTS latency is heavily affected by how much text the provider waits for before generating audio. Smaller chunks usually reduce time-to-first-audio, while larger chunks can improve prosody and naturalness. `auto_mode` lets ElevenLabs optimize streaming behavior. Speech speed is slightly above normal so answers feel crisp without sounding rushed.
+TTS latency is heavily affected by how much text the provider waits for before generating audio. Smaller chunks usually reduce time-to-first-audio, while larger chunks can improve prosody and naturalness. Sarvam exposes buffering and chunk length controls, so tune `SARVAM_MIN_BUFFER_SIZE` and `SARVAM_MAX_CHUNK_LENGTH` if the voice feels too eager or too delayed.
 
-`USE_TTS_ALIGNED_TRANSCRIPT=false` and `ELEVENLABS_SYNC_ALIGNMENT=false` remove alignment work that is useful for captions but not essential for fastest spoken output.
+`USE_TTS_ALIGNED_TRANSCRIPT=false` avoids alignment work that is useful for captions but not essential for fastest spoken output.
 
 ML concept to study: neural TTS performs sequence-to-sequence generation from text tokens to acoustic frames. Chunking controls how much future text context the model sees before it starts producing audio, so it directly affects latency versus prosody.
 
 Study links:
 
-- [ElevenLabs audio streaming concepts](https://elevenlabs.io/docs/eleven-api/concepts/audio-streaming)
-- [ElevenLabs WebSocket streaming and chunk schedule](https://elevenlabs.io/docs/eleven-api/websockets)
-- [ElevenLabs latency optimization](https://elevenlabs.io/docs/api-reference/reducing-latency)
-- [LiveKit ElevenLabs TTS plugin](https://docs.livekit.io/agents/models/tts/plugins/elevenlabs/)
+- [LiveKit Sarvam TTS plugin](https://docs.livekit.io/agents/models/tts/sarvam/)
+- [Sarvam docs](https://docs.sarvam.ai/)
 
 ### Background Ambience
 
@@ -339,8 +336,8 @@ MIN_ENDPOINTING_DELAY=0.15
 MAX_ENDPOINTING_DELAY=0.65
 GEMINI_THINKING_BUDGET=0
 GEMINI_MAX_OUTPUT_TOKENS=160
-ELEVENLABS_STREAMING_LATENCY=4
-ELEVENLABS_SPEED=1.12
+SARVAM_MIN_BUFFER_SIZE=30
+SARVAM_MAX_CHUNK_LENGTH=100
 BACKGROUND_AMBIENT_VOLUME=0.10
 ```
 
@@ -353,8 +350,8 @@ MIN_ENDPOINTING_DELAY=0.22
 MAX_ENDPOINTING_DELAY=0.9
 GEMINI_THINKING_BUDGET=0
 GEMINI_MAX_OUTPUT_TOKENS=220
-ELEVENLABS_STREAMING_LATENCY=3
-ELEVENLABS_SPEED=1.08
+SARVAM_MIN_BUFFER_SIZE=50
+SARVAM_MAX_CHUNK_LENGTH=150
 BACKGROUND_AMBIENT_VOLUME=0.18
 ```
 
@@ -367,8 +364,8 @@ MIN_ENDPOINTING_DELAY=0.35
 MAX_ENDPOINTING_DELAY=1.4
 GEMINI_THINKING_BUDGET=512
 GEMINI_MAX_OUTPUT_TOKENS=320
-ELEVENLABS_STREAMING_LATENCY=2
-ELEVENLABS_SPEED=1.0
+SARVAM_MIN_BUFFER_SIZE=80
+SARVAM_MAX_CHUNK_LENGTH=220
 BACKGROUND_AMBIENT_VOLUME=0.12
 ```
 
@@ -379,7 +376,7 @@ Best for complex questions where a slightly slower answer is acceptable.
 Use logs and metrics to separate the bottlenecks:
 
 - If the delay is before transcript finalization, tune Deepgram endpointing and LiveKit endpointing.
-- If transcript finalizes quickly but speech starts late, tune Gemini thinking/output tokens or ElevenLabs streaming.
+- If transcript finalizes quickly but speech starts late, tune Gemini thinking/output tokens or Sarvam buffering.
 - If first response after idle is slow, look for cold starts, model downloads, or EC2 CPU/memory pressure.
 - If audio connects slowly or drops, inspect LiveKit server logs, ICE/TURN connectivity, and EC2 security groups.
 
