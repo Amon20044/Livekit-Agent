@@ -1194,6 +1194,9 @@ codecs = [
 deepgram = [
     { name = "livekit-plugins-deepgram" },
 ]
+elevenlabs = [
+    { name = "livekit-plugins-elevenlabs" },
+]
 google = [
     { name = "livekit-plugins-google" },
 ]
@@ -1292,6 +1295,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/91/36/6fd218b20ac323d560feb04f8436da9b212b2a3a7d7cb696032872bd4a3e/livekit_plugins_deepgram-1.5.8.tar.gz", hash = "sha256:f03943cbfee87448c9749f4737ceacb5935ae828a881970170cdbaa6bf74f3fa", size = 18034, upload-time = "2026-05-05T18:46:58.329Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/95/53/af9f12b604b1c9a0f7b8698aed6705b0107140765b350791a4bfe9e2c85b/livekit_plugins_deepgram-1.5.8-py3-none-any.whl", hash = "sha256:3c131059a9e50f73c5664f358eec523b234241b145fd1906a5966e99ea06206a", size = 22820, upload-time = "2026-05-05T18:46:56.956Z" },
+]
+
+[[package]]
+name = "livekit-plugins-elevenlabs"
+version = "1.5.8"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "livekit-agents", extra = ["codecs"] },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/89/05/3627c88c89ff5154212a33eb14021c790791743c4f85731aea610f548fec/livekit_plugins_elevenlabs-1.5.8.tar.gz", hash = "sha256:f0d11496e3d853ed631bfff9fcde76b7760b826835120971fb1f26d5d22379b6", size = 17327, upload-time = "2026-05-05T18:47:14.563Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a8/9a/96ec5dbbe8960ae80652a6a1683a6bd68224749e6eff90c8359f37f6b3eb/livekit_plugins_elevenlabs-1.5.8-py3-none-any.whl", hash = "sha256:fe291c2e9a9500b82f2668e25f73c5924b46c006c785b3c81d3ef73ba75ea1cd", size = 19995, upload-time = "2026-05-05T18:47:12.947Z" },
 ]
 
 [[package]]
@@ -1654,7 +1669,7 @@ dependencies = [
     { name = "aiohttp" },
     { name = "annotated-types" },
     { name = "livekit" },
-    { name = "livekit-agents", extra = ["deepgram", "google", "sarvam", "silero"] },
+    { name = "livekit-agents", extra = ["deepgram", "elevenlabs", "google", "sarvam", "silero"] },
     { name = "livekit-plugins-ai-coustics" },
     { name = "livekit-plugins-turn-detector" },
     { name = "python-dotenv" },
@@ -1673,7 +1688,7 @@ requires-dist = [
     { name = "aiohttp", specifier = ">=3.9" },
     { name = "annotated-types" },
     { name = "livekit" },
-    { name = "livekit-agents", extras = ["deepgram", "google", "sarvam", "silero"], specifier = "~=1.5" },
+    { name = "livekit-agents", extras = ["deepgram", "elevenlabs", "google", "sarvam", "silero"], specifier = "~=1.5" },
     { name = "livekit-plugins-ai-coustics", specifier = ">=0.2.13" },
     { name = "livekit-plugins-turn-detector" },
     { name = "python-dotenv", specifier = ">=1.0" },

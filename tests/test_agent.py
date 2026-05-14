@@ -10,8 +10,10 @@ from agent import (
     _build_llm,
     _build_llm_kwargs,
     _build_tts,
+    _build_turn_detector,
     _build_turn_handling_options,
     _cost_delta,
+    _deepgram_language,
     _env_bool,
     _env_float,
     _env_int,
@@ -19,13 +21,16 @@ from agent import (
     _loggable_costs,
     _plugin_model,
     _session_costs,
+    elevenlabs,
     llm,
     sarvam,
 )
 from tools import search_ai_mode, search_latest_news
 
 
-def test_anchor_agent_is_search_focused_and_has_serpapi_tools() -> None:
+def test_anchor_agent_is_search_focused_and_has_serpapi_tools(monkeypatch) -> None:
+    monkeypatch.delenv("USE_EL", raising=False)
+
     agent = AnchorVoiceAgent()
 
     assert "Anchor" in agent.instructions
@@ -38,6 +43,18 @@ def test_anchor_agent_is_search_focused_and_has_serpapi_tools() -> None:
         agent.instructions
     )
     assert "let the background thinking" in agent.instructions
+    assert agent.tools == [search_latest_news, search_ai_mode]
+
+
+def test_anchor_agent_uses_english_language_defaults_with_elevenlabs(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("USE_EL", "true")
+
+    agent = AnchorVoiceAgent()
+
+    assert "Speak in English by default" in agent.instructions
+    assert "Speak in Hindi by default" not in agent.instructions
     assert agent.tools == [search_latest_news, search_ai_mode]
 
 
@@ -91,10 +108,35 @@ def test_turn_handling_defaults_to_multilingual_detector(monkeypatch) -> None:
         pass
 
     monkeypatch.setattr(agent_module, "MultilingualModel", FakeMultilingualModel)
+    monkeypatch.delenv("USE_EL", raising=False)
 
     options = _build_turn_handling_options()
 
     assert isinstance(options["turn_detection"], FakeMultilingualModel)
+
+
+def test_use_el_defaults_speech_stack_to_english(monkeypatch) -> None:
+    class FakeEnglishModel:
+        pass
+
+    monkeypatch.setenv("USE_EL", "true")
+    monkeypatch.delenv("DEEPGRAM_STT_LANGUAGE", raising=False)
+    monkeypatch.setattr(agent_module, "EnglishModel", FakeEnglishModel)
+
+    assert _deepgram_language() == "en"
+    assert isinstance(_build_turn_detector(), FakeEnglishModel)
+
+
+def test_sarvam_defaults_speech_stack_to_multilingual(monkeypatch) -> None:
+    class FakeMultilingualModel:
+        pass
+
+    monkeypatch.delenv("USE_EL", raising=False)
+    monkeypatch.delenv("DEEPGRAM_STT_LANGUAGE", raising=False)
+    monkeypatch.setattr(agent_module, "MultilingualModel", FakeMultilingualModel)
+
+    assert _deepgram_language() == "multi"
+    assert isinstance(_build_turn_detector(), FakeMultilingualModel)
 
 
 def test_gemini_25_defaults_to_dynamic_thinking_and_roomy_output(monkeypatch) -> None:
@@ -124,12 +166,38 @@ def test_llm_fallback_can_be_disabled(monkeypatch) -> None:
     assert not isinstance(model, llm.FallbackAdapter)
 
 
+@pytest.mark.asyncio
+async def test_use_el_builds_optimized_elevenlabs_english_tts(monkeypatch) -> None:
+    monkeypatch.setenv("USE_EL", "true")
+    monkeypatch.delenv("ELEVENLABS_TTS_MODEL", raising=False)
+    monkeypatch.delenv("ELEVENLABS_TTS_LANGUAGE", raising=False)
+    monkeypatch.setattr(agent_module, "elevenlabs_api_key", "test-key")
+    monkeypatch.setattr(agent_module, "elevenlabs_voice_id", "test-voice")
+
+    tts = _build_tts()
+
+    assert isinstance(tts, elevenlabs.TTS)
+    assert tts._opts.model == "eleven_flash_v2_5"
+    assert str(tts._opts.language) == "en"
+    assert tts._opts.voice_id == "test-voice"
+    assert tts._opts.streaming_latency == 3
+    assert tts._opts.auto_mode is True
+    assert tts._opts.chunk_length_schedule == [50, 80, 120, 160]
+    assert tts._opts.sync_alignment is False
+    assert tts._opts.voice_settings.stability == 0.45
+    assert tts._opts.voice_settings.similarity_boost == 0.75
+    assert tts._opts.voice_settings.speed == 1.08
+    assert tts._opts.voice_settings.use_speaker_boost is False
+    await tts.aclose()
+
+
 def test_sarvam_tts_uses_multilingual_indian_defaults(monkeypatch) -> None:
+    monkeypatch.delenv("USE_EL", raising=False)
     monkeypatch.setenv("SARVAM_API_KEY", "test-key")
     monkeypatch.delenv("SARVAM_TARGET_LANGUAGE_CODE", raising=False)
     monkeypatch.delenv("SARVAM_SPEAKER", raising=False)
 
-    tts = _build_tts("bulbul:v3")
+    tts = _build_tts()
 
     assert isinstance(tts, sarvam.TTS)
     assert tts._opts.model == "bulbul:v3"
@@ -143,6 +211,7 @@ def test_session_costs_include_deepgram_gemini_and_sarvam() -> None:
         "gemini_input_per_1m": 0.10,
         "gemini_output_per_1m": 0.40,
         "sarvam_tts_per_1k_chars": 0.02,
+        "elevenlabs_tts_per_1k_chars": 0.05,
     }
     usage = SimpleNamespace(
         model_usage=[
@@ -157,12 +226,41 @@ def test_session_costs_include_deepgram_gemini_and_sarvam() -> None:
         ]
     )
 
-    costs = _session_costs(usage, pricing)
+    costs = _session_costs(usage, pricing, tts_provider="sarvam")
 
     assert costs["deepgram"] == pytest.approx(0.0077)
     assert costs["llm"] == pytest.approx(0.275)
     assert costs["sarvam"] == pytest.approx(0.02)
     assert costs["total"] == pytest.approx(0.3027)
+
+
+def test_session_costs_include_deepgram_gemini_and_elevenlabs() -> None:
+    pricing = {
+        "deepgram_stt_per_minute": 0.0077,
+        "gemini_input_per_1m": 0.10,
+        "gemini_output_per_1m": 0.40,
+        "sarvam_tts_per_1k_chars": 0.02,
+        "elevenlabs_tts_per_1k_chars": 0.05,
+    }
+    usage = SimpleNamespace(
+        model_usage=[
+            SimpleNamespace(type="stt_usage", audio_duration=60.0),
+            SimpleNamespace(
+                type="llm_usage",
+                input_tokens=1_000_000,
+                input_cached_tokens=250_000,
+                output_tokens=500_000,
+            ),
+            SimpleNamespace(type="tts_usage", characters_count=1_000),
+        ]
+    )
+
+    costs = _session_costs(usage, pricing, tts_provider="elevenlabs")
+
+    assert costs["deepgram"] == pytest.approx(0.0077)
+    assert costs["llm"] == pytest.approx(0.275)
+    assert costs["elevenlabs"] == pytest.approx(0.05)
+    assert costs["total"] == pytest.approx(0.3327)
 
 
 def test_cost_delta_and_summary_format() -> None:
