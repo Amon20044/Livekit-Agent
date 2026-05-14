@@ -25,15 +25,12 @@ async def _announce_search(context: RunContext | None) -> None:
 
     context._anchor_search_announced = True
 
-    await context.session.generate_reply(
-        instructions=(
-            "Say one very short search status update, using natural varied wording. "
-            "Keep it under five words and do not mention timing. "
-            "Examples: 'I'll check that now.' or 'Let me look that up.'"
-        )
+    handle = context.session.say(
+        "I'll check that now.",
+        allow_interruptions=False,
+        add_to_chat_ctx=False,
     )
-    if hasattr(context, "wait_for_playout"):
-        await context.wait_for_playout()
+    await handle.wait_for_playout()
 
 
 async def _serpapi_get(params: dict[str, str], timeout_seconds: int = 12) -> dict:

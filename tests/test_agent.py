@@ -1,14 +1,20 @@
+from types import SimpleNamespace
+
 import pytest
 
 from agent import (
     AnchorVoiceAgent,
+    BuiltinAudioClip,
     _build_background_audio_player,
     _build_llm_kwargs,
     _build_turn_handling_options,
+    _cost_delta,
     _env_bool,
     _env_float,
     _env_int,
+    _format_cost_summary,
     _plugin_model,
+    _session_costs,
 )
 from tools import search_ai_mode, search_latest_news
 
@@ -20,7 +26,10 @@ def test_anchor_agent_is_search_focused_and_has_serpapi_tools() -> None:
     assert "latest news" in agent.instructions
     assert "search_ai_mode" in agent.instructions
     assert "Yes, sure, let me search that for you" not in agent.instructions
-    assert "Never repeat or paraphrase it" in agent.instructions
+    assert "The tool itself says one short acknowledgement exactly once" in (
+        agent.instructions
+    )
+    assert "let the background thinking" in agent.instructions
     assert agent.tools == [search_latest_news, search_ai_mode]
 
 
@@ -79,6 +88,48 @@ def test_gemini_25_defaults_to_no_extra_thinking(monkeypatch) -> None:
     assert kwargs["max_output_tokens"] == 220
 
 
+def test_session_costs_include_deepgram_gemini_and_elevenlabs() -> None:
+    pricing = {
+        "deepgram_stt_per_minute": 0.0077,
+        "gemini_input_per_1m": 0.10,
+        "gemini_output_per_1m": 0.40,
+        "elevenlabs_tts_per_1k_chars": 0.05,
+    }
+    usage = SimpleNamespace(
+        model_usage=[
+            SimpleNamespace(type="stt_usage", audio_duration=60.0),
+            SimpleNamespace(
+                type="llm_usage",
+                input_tokens=1_000_000,
+                input_cached_tokens=250_000,
+                output_tokens=500_000,
+            ),
+            SimpleNamespace(type="tts_usage", characters_count=1_000),
+        ]
+    )
+
+    costs = _session_costs(usage, pricing)
+
+    assert costs["deepgram"] == pytest.approx(0.0077)
+    assert costs["llm"] == pytest.approx(0.275)
+    assert costs["elevenlabs"] == pytest.approx(0.05)
+    assert costs["total"] == pytest.approx(0.3327)
+
+
+def test_cost_delta_and_summary_format() -> None:
+    current = {"deepgram": 0.02, "llm": 0.03, "elevenlabs": 0.04, "total": 0.09}
+    previous = {"deepgram": 0.01, "llm": 0.01, "elevenlabs": 0.03, "total": 0.05}
+
+    delta = _cost_delta(current, previous)
+
+    assert delta == pytest.approx(
+        {"deepgram": 0.01, "llm": 0.02, "elevenlabs": 0.01, "total": 0.04}
+    )
+    assert _format_cost_summary(delta) == (
+        "deepgram=$0.010000 llm=$0.020000 elevenlabs=$0.010000 total=$0.040000"
+    )
+
+
 def test_background_audio_can_be_disabled(monkeypatch) -> None:
     monkeypatch.setenv("BACKGROUND_AUDIO_ENABLED", "false")
 
@@ -88,9 +139,13 @@ def test_background_audio_can_be_disabled(monkeypatch) -> None:
 @pytest.mark.asyncio
 async def test_background_audio_defaults_to_enabled(monkeypatch) -> None:
     monkeypatch.delenv("BACKGROUND_AUDIO_ENABLED", raising=False)
+    monkeypatch.delenv("BACKGROUND_AMBIENT_SOUND_ENABLED", raising=False)
     monkeypatch.delenv("BACKGROUND_AMBIENT_CLIP", raising=False)
+    monkeypatch.delenv("BACKGROUND_THINKING_CLIP", raising=False)
 
     player = _build_background_audio_player()
 
     assert player is not None
+    assert player._ambient_sound is None
+    assert player._thinking_sound.source == BuiltinAudioClip.HOLD_MUSIC
     await player.aclose()

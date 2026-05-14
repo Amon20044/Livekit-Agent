@@ -12,10 +12,9 @@ from livekit.agents import (
     BuiltinAudioClip,
     JobContext,
     JobProcess,
-    MetricsCollectedEvent,
     RoomInputOptions,
+    SessionUsageUpdatedEvent,
     TurnHandlingOptions,
-    metrics,
 )
 from livekit.plugins import ai_coustics, deepgram, elevenlabs, google, silero
 from livekit.plugins.turn_detector.english import EnglishModel
@@ -48,6 +47,10 @@ elevenlabs_language = os.getenv("ELEVENLABS_TTS_LANGUAGE", "en")
 gemini_model = os.getenv("GEMINI_LLM_MODEL", "gemini-2.5-flash-lite")
 gemini_thinking_level = os.getenv("GEMINI_THINKING_LEVEL", "low")
 gemini_thinking_budget = os.getenv("GEMINI_THINKING_BUDGET", "0")
+
+
+def _money(value: float) -> str:
+    return f"${value:.6f}"
 
 
 def _plugin_model(value: str, provider_prefix: str) -> str:
@@ -112,6 +115,85 @@ def _env_int(
     if max_value is not None:
         parsed = min(max_value, parsed)
     return parsed
+
+
+def _pricing_config() -> dict[str, float]:
+    return {
+        "deepgram_stt_per_minute": _env_float(
+            "COST_DEEPGRAM_STT_PER_MINUTE_USD",
+            0.0077,
+            min_value=0.0,
+        ),
+        "gemini_input_per_1m": _env_float(
+            "COST_GEMINI_INPUT_PER_1M_TOKENS_USD",
+            0.10,
+            min_value=0.0,
+        ),
+        "gemini_output_per_1m": _env_float(
+            "COST_GEMINI_OUTPUT_PER_1M_TOKENS_USD",
+            0.40,
+            min_value=0.0,
+        ),
+        "elevenlabs_tts_per_1k_chars": _env_float(
+            "COST_ELEVENLABS_TTS_PER_1K_CHARS_USD",
+            0.05,
+            min_value=0.0,
+        ),
+    }
+
+
+def _usage_costs(usage: Any, pricing: dict[str, float]) -> dict[str, float]:
+    costs = {"deepgram": 0.0, "llm": 0.0, "elevenlabs": 0.0}
+
+    if usage.type == "stt_usage":
+        costs["deepgram"] = (
+            usage.audio_duration / 60.0 * pricing["deepgram_stt_per_minute"]
+        )
+    elif usage.type == "llm_usage":
+        billable_input_tokens = max(
+            usage.input_tokens - usage.input_cached_tokens,
+            0,
+        )
+        costs["llm"] = (
+            billable_input_tokens / 1_000_000.0 * pricing["gemini_input_per_1m"]
+            + usage.output_tokens / 1_000_000.0 * pricing["gemini_output_per_1m"]
+        )
+    elif usage.type == "tts_usage":
+        costs["elevenlabs"] = (
+            usage.characters_count / 1_000.0 * pricing["elevenlabs_tts_per_1k_chars"]
+        )
+
+    return costs
+
+
+def _session_costs(session_usage: Any, pricing: dict[str, float]) -> dict[str, float]:
+    totals = {"deepgram": 0.0, "llm": 0.0, "elevenlabs": 0.0}
+
+    for usage in session_usage.model_usage:
+        for provider, cost in _usage_costs(usage, pricing).items():
+            totals[provider] += cost
+
+    totals["total"] = sum(totals.values())
+    return totals
+
+
+def _cost_delta(
+    current: dict[str, float],
+    previous: dict[str, float],
+) -> dict[str, float]:
+    return {
+        key: max(current.get(key, 0.0) - previous.get(key, 0.0), 0.0)
+        for key in ("deepgram", "llm", "elevenlabs", "total")
+    }
+
+
+def _format_cost_summary(costs: dict[str, float]) -> str:
+    return (
+        f"deepgram={_money(costs['deepgram'])} "
+        f"llm={_money(costs['llm'])} "
+        f"elevenlabs={_money(costs['elevenlabs'])} "
+        f"total={_money(costs['total'])}"
+    )
 
 
 def _build_llm_kwargs(model: str) -> dict[str, Any]:
@@ -230,31 +312,50 @@ def _build_background_audio_player() -> BackgroundAudioPlayer | None:
         os.getenv("BACKGROUND_AMBIENT_CLIP", "OFFICE_AMBIENCE"),
         BuiltinAudioClip.OFFICE_AMBIENCE,
     )
-    ambient_sound = AudioConfig(
-        ambient_clip,
-        volume=_env_float(
-            "BACKGROUND_AMBIENT_VOLUME", 0.18, min_value=0.0, max_value=1.0
-        ),
-    )
+    ambient_sound = None
+    if _env_bool("BACKGROUND_AMBIENT_SOUND_ENABLED", False):
+        ambient_sound = AudioConfig(
+            ambient_clip,
+            volume=_env_float(
+                "BACKGROUND_AMBIENT_VOLUME", 0.18, min_value=0.0, max_value=1.0
+            ),
+        )
 
     thinking_sound = None
     if _env_bool("BACKGROUND_THINKING_SOUND_ENABLED", True):
-        thinking_sound = [
-            AudioConfig(
-                BuiltinAudioClip.KEYBOARD_TYPING,
-                volume=_env_float(
-                    "BACKGROUND_THINKING_VOLUME", 0.16, min_value=0.0, max_value=1.0
-                ),
-                probability=0.75,
+        thinking_clip = _builtin_audio_clip(
+            os.getenv("BACKGROUND_THINKING_CLIP", "HOLD_MUSIC"),
+            BuiltinAudioClip.HOLD_MUSIC,
+        )
+        thinking_sound = AudioConfig(
+            thinking_clip,
+            volume=_env_float(
+                "BACKGROUND_THINKING_VOLUME", 0.10, min_value=0.0, max_value=1.0
             ),
-            AudioConfig(
-                BuiltinAudioClip.KEYBOARD_TYPING2,
-                volume=_env_float(
-                    "BACKGROUND_THINKING_VOLUME_ALT", 0.12, min_value=0.0, max_value=1.0
+        )
+        if thinking_clip == BuiltinAudioClip.KEYBOARD_TYPING:
+            thinking_sound = [
+                AudioConfig(
+                    thinking_clip,
+                    volume=_env_float(
+                        "BACKGROUND_THINKING_VOLUME",
+                        0.10,
+                        min_value=0.0,
+                        max_value=1.0,
+                    ),
+                    probability=0.75,
                 ),
-                probability=0.25,
-            ),
-        ]
+                AudioConfig(
+                    BuiltinAudioClip.KEYBOARD_TYPING2,
+                    volume=_env_float(
+                        "BACKGROUND_THINKING_VOLUME_ALT",
+                        0.08,
+                        min_value=0.0,
+                        max_value=1.0,
+                    ),
+                    probability=0.25,
+                ),
+            ]
 
     return BackgroundAudioPlayer(
         ambient_sound=ambient_sound,
@@ -294,8 +395,10 @@ You are Anchor, a fast voice-first news and current-events agent.
   or anything that might have changed recently.
 - Use search_ai_mode for non-news web lookups, comparisons, explanations,
   recommendations, and general research that benefits from a synthesized answer.
-- When you use a search tool, do not separately announce that you are searching.
-  The tool may give one brief status update. Never repeat or paraphrase it.
+- When you use a search tool, call it directly without first saying a search
+  status line. The tool itself says one short acknowledgement exactly once.
+- While a search tool is running, stay silent and let the background thinking
+  audio fill the wait. Do not repeat filler like "let me search" or "one moment".
 - Summarize search results carefully. Mention source names and dates when available.
 - If live search is unavailable, say that directly and answer only from stable knowledge.
 
@@ -351,12 +454,37 @@ async def entrypoint(ctx: JobContext):
         user_away_timeout=None,
     )
 
-    @session.on("metrics_collected")
-    def _on_metrics_collected(ev: MetricsCollectedEvent):
-        metrics.log_metrics(ev.metrics)
+    pricing = _pricing_config()
+    last_costs = {"deepgram": 0.0, "llm": 0.0, "elevenlabs": 0.0, "total": 0.0}
+
+    @session.on("session_usage_updated")
+    def _on_session_usage_updated(ev: SessionUsageUpdatedEvent):
+        nonlocal last_costs
+
+        current_costs = _session_costs(ev.usage, pricing)
+        delta_costs = _cost_delta(current_costs, last_costs)
+        last_costs = current_costs
+
+        if delta_costs["total"] == 0.0:
+            return
+
+        logger.info(
+            "Turn cost delta: %s | call total: %s",
+            _format_cost_summary(delta_costs),
+            _format_cost_summary(current_costs),
+            extra={
+                "cost_delta_usd": delta_costs,
+                "cost_total_usd": current_costs,
+            },
+        )
 
     async def log_usage():
-        logger.info("Session ended")
+        final_costs = _session_costs(session.usage, pricing)
+        logger.info(
+            "Session ended. Final call cost: %s",
+            _format_cost_summary(final_costs),
+            extra={"cost_total_usd": final_costs},
+        )
 
     ctx.add_shutdown_callback(log_usage)
 
