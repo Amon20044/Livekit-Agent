@@ -719,7 +719,6 @@ async def entrypoint(ctx: JobContext):
     await session.generate_reply(
         instructions=INITIAL_GREETING_INSTRUCTIONS,
         allow_interruptions=True,
-        add_to_chat_ctx=True,
     )
     
 
