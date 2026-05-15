@@ -2,8 +2,8 @@ import aiohttp
 import pytest
 
 from tools import (
-    SerpApiError,
     SERPAPI_URL,
+    SerpApiError,
     _announce_search,
     _log_serpapi_client_error,
     _redact_url,

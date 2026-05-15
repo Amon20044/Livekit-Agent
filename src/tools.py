@@ -106,9 +106,9 @@ async def search_latest_news(
     params = {
         "engine": "google_news",
         "q": query,
-        "gl": "us",
+        "gl": "IN",
         "hl": "en",
-        "location": location,
+        "location": location or "India",
         "api_key": api_key,
     }
 
