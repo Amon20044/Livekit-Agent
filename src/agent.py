@@ -26,11 +26,10 @@ from tools import search_ai_mode, search_latest_news
 
 logger = logging.getLogger("agent")
 _DEFAULT_TURN_DETECTION = object()
-INITIAL_GREETING_INSTRUCTIONS = """
-Greet the user warmly in one natural breath, introduce yourself as veena, a helpful assistant for news and searching anything from internet,
-and ask what name you should call them. Sound human and present, not scripted.
-Keep it to one or two short spoken sentences.
-"""
+INITIAL_GREETING_INSTRUCTIONS = (
+    "Greet the user in one short sentence as Veena, a news and search assistant, "
+    "and ask what to call them. Warm, not scripted."
+)
 
 env_file_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env.local")
 load_dotenv(env_file_path)
@@ -260,16 +259,16 @@ def _build_llm_kwargs(model: str) -> dict[str, Any]:
         "model": model,
         "api_key": google_api_key,
         "temperature": _env_float(
-            "GEMINI_TEMPERATURE", 0.45, min_value=0.0, max_value=2.0
+            "GEMINI_TEMPERATURE", 0.35, min_value=0.0, max_value=2.0
         ),
-        "max_output_tokens": _env_int("GEMINI_MAX_OUTPUT_TOKENS", 640, min_value=128),
+        "max_output_tokens": _env_int("GEMINI_MAX_OUTPUT_TOKENS", 220, min_value=64),
     }
 
     if model.startswith("gemini-2.5"):
         kwargs["thinking_config"] = {
             "thinking_budget": _env_int(
                 "GEMINI_THINKING_BUDGET",
-                -1,
+                0,
                 min_value=-1,
             )
         }
@@ -367,9 +366,9 @@ def _build_elevenlabs_tts(model: str) -> elevenlabs.TTS:
         auto_mode=_env_bool("ELEVENLABS_AUTO_MODE", True),
         chunk_length_schedule=[
             _env_int("ELEVENLABS_CHUNK_1", 50, min_value=50, max_value=500),
-            _env_int("ELEVENLABS_CHUNK_2", 80, min_value=50, max_value=500),
-            _env_int("ELEVENLABS_CHUNK_3", 120, min_value=50, max_value=500),
-            _env_int("ELEVENLABS_CHUNK_4", 160, min_value=50, max_value=500),
+            _env_int("ELEVENLABS_CHUNK_2", 70, min_value=50, max_value=500),
+            _env_int("ELEVENLABS_CHUNK_3", 100, min_value=50, max_value=500),
+            _env_int("ELEVENLABS_CHUNK_4", 140, min_value=50, max_value=500),
         ],
         voice_settings=elevenlabs.VoiceSettings(
             stability=_env_float(
@@ -397,10 +396,10 @@ def _build_sarvam_tts(model: str) -> sarvam.TTS:
         ),
         output_audio_bitrate=os.getenv("SARVAM_OUTPUT_AUDIO_BITRATE", "128k"),
         min_buffer_size=_env_int(
-            "SARVAM_MIN_BUFFER_SIZE", 50, min_value=30, max_value=200
+            "SARVAM_MIN_BUFFER_SIZE", 40, min_value=20, max_value=200
         ),
         max_chunk_length=_env_int(
-            "SARVAM_MAX_CHUNK_LENGTH", 150, min_value=50, max_value=500
+            "SARVAM_MAX_CHUNK_LENGTH", 120, min_value=40, max_value=500
         ),
         speech_sample_rate=_env_int(
             "SARVAM_SPEECH_SAMPLE_RATE", 22050, min_value=8000, max_value=24000
@@ -422,21 +421,17 @@ def _build_tts(model: str | None = None) -> elevenlabs.TTS | sarvam.TTS:
 
 def _language_instructions() -> str:
     if _use_elevenlabs_tts():
-        return """# Language
-- Speak in English by default.
-- If the user explicitly asks for another language, only switch when it is clear
-  and natural for the configured voice.
-- Keep names, product names, source names, and technical terms in English when
-  translating them would sound unnatural.
-- Do not announce that you are switching languages; just answer naturally."""
+        return (
+            "# Language\n"
+            "- English by default. Switch only if the user clearly asks. "
+            "Keep names and technical terms in English. Never announce a language switch."
+        )
 
-    return """# Language
-- Speak in Hindi by default, using natural conversational Hindi.
-- If the user speaks another language or explicitly asks for another language,
-  respond in that language.
-- Keep English names, product names, source names, and technical terms in English
-  when translating them would sound unnatural.
-- Do not announce that you are switching languages; just answer naturally."""
+    return (
+        "# Language\n"
+        "- Hindi by default (natural conversational). Match the user's language if they switch. "
+        "Keep English names and technical terms in English. Never announce a language switch."
+    )
 
 
 def _builtin_audio_clip(name: str, default: BuiltinAudioClip) -> BuiltinAudioClip:
@@ -526,50 +521,24 @@ def _room_options() -> room_io.RoomOptions:
 class AnchorVoiceAgent(Agent):
     def __init__(self) -> None:
         super().__init__(
-            instructions=f"""
-You are Veena, a fast voice-first news and current-events agent.
+            instructions=f"""You are Veena, a warm, fast voice-first news and search assistant.
 
 {_language_instructions()}
 
 # Voice style
-- Speak in plain, natural language with a warm, human touch.
-- Speak naturally like a calm human assistant.
-- Do not over-explain unless the user asks.
-- Sound warm, not robotic.
-- When the session starts, greet the user and ask what you should call them.
-- Use small acknowledgements like "Got it", "Makes sense", "Sure", but do not repeat them too often.
-- Keep answers brief by default, usually 1-3 sentences, but avoid sounding clipped
-  or robotic.
-- Use small conversational cues when helpful, like "got it", "fair question", or
-  "that makes sense", but do not overdo filler.
-- For the first turn, greet the user, introduce yourself, and ask what name you
-  should call them.
-- After the user gives their name, use it occasionally and naturally, not in every
-  reply.
-- Lead with the newest confirmed information, then add one useful detail.
-- Do not use markdown, bullets, emojis, citations, or visual formatting in spoken replies.
+- 1-3 short spoken sentences. No markdown, bullets, emojis, or citations.
+- Lead with the newest confirmed fact, then one useful detail.
+- Light acknowledgements ("got it", "sure") sparingly. Use the user's name occasionally, not every turn.
 
-# Tool use
-- Use search_latest_news whenever the user asks about latest news, recent events,
-  market-moving updates, sports results, public figures, products, laws, releases,
-  or anything that might have changed recently.
-- Use search_ai_mode for non-news web lookups, comparisons, explanations,
-  recommendations, India-specific factual questions, local recommendations,
-  government/services/process questions, prices, places, and general research
-  that benefits from a synthesized answer.
-- If a user asks about India or an Indian city and it is not latest news, use
-  search_ai_mode with the most specific India location you can infer.
-- When you use a search tool, call it directly without first saying a search
-  status line. The tool itself says one short acknowledgement exactly once.
-- While a search tool is running, stay silent and let the background thinking
-  audio fill the wait. Do not repeat filler like "let me search" or "one moment".
-- Summarize search results carefully. Mention source names and dates when available.
-- If live search is unavailable, say that directly and answer only from stable knowledge.
+# Tools
+- search_latest_news: anything time-sensitive (news, sports results, releases, public figures, prices that move).
+- search_ai_mode: web lookups, comparisons, explanations, India-specific facts, local recommendations, how-to.
+- Call tools directly. Do NOT say "let me search" or "one moment" — stay silent during the call; background audio covers the wait.
+- Summarize results with source names and dates when available. If live search fails, say so and answer from stable knowledge only.
 
 # Boundaries
-- Do not pretend to know real-time facts without searching.
-- Keep speculation separate from confirmed results.
-""",
+- Never invent real-time facts without a tool call.
+- Keep speculation clearly separated from confirmed results.""",
             tools=[search_latest_news, search_ai_mode],
         )
 
@@ -636,7 +605,7 @@ async def entrypoint(ctx: JobContext):
             "MIN_CONSECUTIVE_SPEECH_DELAY", 0.05, min_value=0.0, max_value=2.0
         ),
         aec_warmup_duration=_env_float(
-            "AEC_WARMUP_DURATION", 0.2, min_value=0.0, max_value=5.0
+            "AEC_WARMUP_DURATION", 0.1, min_value=0.0, max_value=5.0
         ),
         user_away_timeout=None,
     )
@@ -684,7 +653,7 @@ async def entrypoint(ctx: JobContext):
         logger.warning("Recovering from empty LLM response: %s", error_text)
         try:
             session.say(
-                "I hit a temporary model hiccup. Please say that again.",
+                "Sorry, say that again?",
                 allow_interruptions=True,
                 add_to_chat_ctx=False,
             )
