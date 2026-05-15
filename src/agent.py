@@ -27,7 +27,7 @@ from tools import search_ai_mode, search_latest_news
 logger = logging.getLogger("agent")
 _DEFAULT_TURN_DETECTION = object()
 INITIAL_GREETING_INSTRUCTIONS = """
-Greet the user warmly in one natural breath, introduce yourself as Anchor,
+Greet the user warmly in one natural breath, introduce yourself as Veena,
 and ask what name you should call them. Sound human and present, not scripted.
 Keep it to one or two short spoken sentences.
 """
@@ -260,16 +260,16 @@ def _build_llm_kwargs(model: str) -> dict[str, Any]:
         "model": model,
         "api_key": google_api_key,
         "temperature": _env_float(
-            "GEMINI_TEMPERATURE", 0.45, min_value=0.0, max_value=2.0
+            "GEMINI_TEMPERATURE", 0.58, min_value=0.0, max_value=2.0
         ),
-        "max_output_tokens": _env_int("GEMINI_MAX_OUTPUT_TOKENS", 640, min_value=128),
+        "max_output_tokens": _env_int("GEMINI_MAX_OUTPUT_TOKENS", 1000, min_value=128),
     }
 
     if model.startswith("gemini-2.5"):
         kwargs["thinking_config"] = {
             "thinking_budget": _env_int(
                 "GEMINI_THINKING_BUDGET",
-                -1,
+                0,
                 min_value=-1,
             )
         }
@@ -293,13 +293,13 @@ def _build_llm(model: str) -> llm.LLM:
     return llm.FallbackAdapter(
         [primary, fallback],
         attempt_timeout=_env_float(
-            "GEMINI_FALLBACK_ATTEMPT_TIMEOUT", 12.0, min_value=1.0, max_value=60.0
+            "GEMINI_FALLBACK_ATTEMPT_TIMEOUT", 4.0, min_value=1.0, max_value=60.0
         ),
         max_retry_per_llm=_env_int(
             "GEMINI_FALLBACK_MAX_RETRY_PER_LLM", 0, min_value=0, max_value=3
         ),
         retry_interval=_env_float(
-            "GEMINI_FALLBACK_RETRY_INTERVAL", 0.2, min_value=0.0, max_value=5.0
+            "GEMINI_FALLBACK_RETRY_INTERVAL", 0.12, min_value=0.0, max_value=5.0
         ),
     )
 
@@ -315,10 +315,10 @@ def _build_turn_handling_options(
         endpointing={
             "mode": os.getenv("ENDPOINTING_MODE", "dynamic"),
             "min_delay": _env_float(
-                "MIN_ENDPOINTING_DELAY", 0.22, min_value=0.05, max_value=2.0
+                "MIN_ENDPOINTING_DELAY", 0.32, min_value=0.05, max_value=2.0
             ),
             "max_delay": _env_float(
-                "MAX_ENDPOINTING_DELAY", 0.9, min_value=0.1, max_value=4.0
+                "MAX_ENDPOINTING_DELAY", 1.15, min_value=0.1, max_value=4.0
             ),
             "alpha": _env_float(
                 "ENDPOINTING_ALPHA", 0.55, min_value=0.0, max_value=1.0
@@ -328,7 +328,7 @@ def _build_turn_handling_options(
             "enabled": True,
             "mode": os.getenv("INTERRUPTION_MODE", "vad"),
             "min_duration": _env_float(
-                "MIN_INTERRUPTION_DURATION", 0.22, min_value=0.05, max_value=2.0
+                "MIN_INTERRUPTION_DURATION", 0.30, min_value=0.05, max_value=2.0
             ),
             "min_words": _env_int("MIN_INTERRUPTION_WORDS", 0, min_value=0),
             "resume_false_interruption": True,
@@ -340,7 +340,7 @@ def _build_turn_handling_options(
             "enabled": _env_bool("PREEMPTIVE_GENERATION", True),
             "preemptive_tts": _env_bool("PREEMPTIVE_TTS", True),
             "max_speech_duration": _env_float(
-                "PREEMPTIVE_MAX_SPEECH_DURATION", 2.5, min_value=0.2, max_value=10.0
+                "PREEMPTIVE_MAX_SPEECH_DURATION", 1.8, min_value=0.2, max_value=10.0
             ),
             "max_retries": _env_int(
                 "PREEMPTIVE_MAX_RETRIES", 1, min_value=0, max_value=5
@@ -373,15 +373,15 @@ def _build_elevenlabs_tts(model: str) -> elevenlabs.TTS:
         ],
         voice_settings=elevenlabs.VoiceSettings(
             stability=_env_float(
-                "ELEVENLABS_STABILITY", 0.45, min_value=0.0, max_value=1.0
+                "ELEVENLABS_STABILITY", 0.38, min_value=0.0, max_value=1.0
             ),
             similarity_boost=_env_float(
-                "ELEVENLABS_SIMILARITY_BOOST", 0.75, min_value=0.0, max_value=1.0
+                "ELEVENLABS_SIMILARITY_BOOST", 0.82, min_value=0.0, max_value=1.0
             ),
-            speed=_env_float("ELEVENLABS_SPEED", 1.08, min_value=0.25, max_value=4.0),
-            use_speaker_boost=_env_bool("ELEVENLABS_SPEAKER_BOOST", False),
+            speed=_env_float("ELEVENLABS_SPEED", 0.95, min_value=0.25, max_value=4.0),
+            use_speaker_boost=_env_bool("ELEVENLABS_SPEAKER_BOOST", True),
         ),
-        sync_alignment=_env_bool("ELEVENLABS_SYNC_ALIGNMENT", False),
+        sync_alignment=_env_bool("ELEVENLABS_SYNC_ALIGNMENT", True),
     )
 
 
@@ -527,12 +527,18 @@ class AnchorVoiceAgent(Agent):
     def __init__(self) -> None:
         super().__init__(
             instructions=f"""
-You are Anchor, a fast voice-first news and current-events agent.
+You are Veena, a warm, natural, voice-first assistant.
+You can help with news, AI updates, explanations, research, and everyday questions.
 
 {_language_instructions()}
 
 # Voice style
+- When the session starts, greet the user and ask what you should call them.
 - Speak in plain, natural language with a warm, human touch.
+- Speak naturally like a calm human assistant.
+- Do not over-explain unless the user asks.
+- Sound warm, not robotic.
+- Use small acknowledgements like "Got it", "Makes sense", "Sure", but do not repeat them too often.
 - Keep answers brief by default, usually 1-3 sentences, but avoid sounding clipped
   or robotic.
 - Use small conversational cues when helpful, like "got it", "fair question", or
@@ -567,13 +573,6 @@ You are Anchor, a fast voice-first news and current-events agent.
 """,
             tools=[search_latest_news, search_ai_mode],
         )
-
-    async def on_enter(self) -> None:
-        await self.session.generate_reply(
-            instructions=INITIAL_GREETING_INSTRUCTIONS,
-            allow_interruptions=True,
-        )
-
 
 def prewarm(proc: JobProcess):
     proc.userdata["vad"] = silero.VAD.load()
@@ -617,10 +616,10 @@ async def entrypoint(ctx: JobContext):
             interim_results=True,
             no_delay=True,
             endpointing_ms=_env_int(
-                "DEEPGRAM_ENDPOINTING_MS", 25, min_value=10, max_value=500
+                "DEEPGRAM_ENDPOINTING_MS", 90, min_value=10, max_value=500
             ),
-            smart_format=_env_bool("DEEPGRAM_SMART_FORMAT", False),
-            filler_words=_env_bool("DEEPGRAM_FILLER_WORDS", False),
+            smart_format=_env_bool("DEEPGRAM_SMART_FORMAT", True),
+            filler_words=_env_bool("DEEPGRAM_FILLER_WORDS", True),
         ),
         llm=_build_llm(llm_model),
         tts=_build_tts(tts_model),
@@ -717,6 +716,12 @@ async def entrypoint(ctx: JobContext):
     if background_audio is not None:
         await background_audio.start(room=ctx.room, agent_session=session)
 
+    await session.generate_reply(
+        instructions=INITIAL_GREETING_INSTRUCTIONS,
+        allow_interruptions=True,
+        add_to_chat_ctx=True,
+    )
+    
 
 if __name__ == "__main__":
     agents.cli.run_app(
