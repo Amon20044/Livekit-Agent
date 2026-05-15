@@ -4,6 +4,7 @@ import pytest
 
 import agent as agent_module
 from agent import (
+    INITIAL_GREETING_INSTRUCTIONS,
     AnchorVoiceAgent,
     BuiltinAudioClip,
     _build_background_audio_player,
@@ -29,7 +30,7 @@ from tools import search_ai_mode, search_latest_news
 
 
 def test_anchor_agent_is_search_focused_and_has_serpapi_tools(monkeypatch) -> None:
-    monkeypatch.delenv("USE_EL", raising=False)
+    monkeypatch.setenv("USE_EL", "false")
 
     agent = AnchorVoiceAgent()
 
@@ -38,12 +39,45 @@ def test_anchor_agent_is_search_focused_and_has_serpapi_tools(monkeypatch) -> No
     assert "natural conversational Hindi" in agent.instructions
     assert "latest news" in agent.instructions
     assert "search_ai_mode" in agent.instructions
+    assert "India-specific factual questions" in agent.instructions
+    assert "Indian city" in agent.instructions
+    assert "warm, human touch" in agent.instructions
+    assert "ask what name you" in agent.instructions
+    assert "avoid sounding clipped" in agent.instructions
     assert "Yes, sure, let me search that for you" not in agent.instructions
     assert "The tool itself says one short acknowledgement exactly once" in (
         agent.instructions
     )
     assert "let the background thinking" in agent.instructions
     assert agent.tools == [search_latest_news, search_ai_mode]
+
+
+@pytest.mark.asyncio
+async def test_anchor_agent_greets_and_asks_for_name_on_enter(monkeypatch) -> None:
+    class FakeSession:
+        def __init__(self) -> None:
+            self.generated_replies = []
+
+        async def generate_reply(self, **kwargs) -> None:
+            self.generated_replies.append(kwargs)
+
+    fake_session = FakeSession()
+    monkeypatch.setattr(
+        agent_module.Agent,
+        "session",
+        property(lambda _agent: fake_session),
+    )
+
+    await AnchorVoiceAgent().on_enter()
+
+    assert fake_session.generated_replies == [
+        {
+            "instructions": INITIAL_GREETING_INSTRUCTIONS,
+            "allow_interruptions": True,
+        }
+    ]
+    assert "ask what name you should call them" in INITIAL_GREETING_INSTRUCTIONS
+    assert "one or two short spoken sentences" in INITIAL_GREETING_INSTRUCTIONS
 
 
 def test_anchor_agent_uses_english_language_defaults_with_elevenlabs(
@@ -108,7 +142,7 @@ def test_turn_handling_defaults_to_multilingual_detector(monkeypatch) -> None:
         pass
 
     monkeypatch.setattr(agent_module, "MultilingualModel", FakeMultilingualModel)
-    monkeypatch.delenv("USE_EL", raising=False)
+    monkeypatch.setenv("USE_EL", "false")
 
     options = _build_turn_handling_options()
 
@@ -131,7 +165,7 @@ def test_sarvam_defaults_speech_stack_to_multilingual(monkeypatch) -> None:
     class FakeMultilingualModel:
         pass
 
-    monkeypatch.delenv("USE_EL", raising=False)
+    monkeypatch.setenv("USE_EL", "false")
     monkeypatch.delenv("DEEPGRAM_STT_LANGUAGE", raising=False)
     monkeypatch.setattr(agent_module, "MultilingualModel", FakeMultilingualModel)
 
@@ -192,7 +226,7 @@ async def test_use_el_builds_optimized_elevenlabs_english_tts(monkeypatch) -> No
 
 
 def test_sarvam_tts_uses_multilingual_indian_defaults(monkeypatch) -> None:
-    monkeypatch.delenv("USE_EL", raising=False)
+    monkeypatch.setenv("USE_EL", "false")
     monkeypatch.setenv("SARVAM_API_KEY", "test-key")
     monkeypatch.delenv("SARVAM_TARGET_LANGUAGE_CODE", raising=False)
     monkeypatch.delenv("SARVAM_SPEAKER", raising=False)

@@ -3,6 +3,7 @@ import pytest
 
 from tools import (
     SerpApiError,
+    SERPAPI_URL,
     _announce_search,
     _log_serpapi_client_error,
     _redact_url,
@@ -83,6 +84,65 @@ def test_redact_url_removes_serpapi_key() -> None:
     url = "https://serpapi.com/search?engine=google_ai_mode&q=test&api_key=secret"
 
     assert _redact_url(url) == "https://serpapi.com/search?engine=google_ai_mode&q=test"
+
+
+def test_serpapi_base_url_does_not_pin_a_single_engine() -> None:
+    assert SERPAPI_URL == "https://serpapi.com/search"
+
+
+@pytest.mark.asyncio
+async def test_search_ai_mode_defaults_to_india_google_ai_mode(monkeypatch) -> None:
+    monkeypatch.setenv("SERPAPI_API_KEY", "secret")
+    calls = []
+
+    async def fake_serpapi_get(params, timeout_seconds=12):
+        calls.append(params)
+        return {
+            "reconstructed_markdown": "In India, this depends on the city and current rules.",
+            "references": [{"title": "Example", "source": "India Guide"}],
+        }
+
+    monkeypatch.setattr("tools._serpapi_get", fake_serpapi_get)
+
+    result = await search_ai_mode._func(_FakeContext(), "specific India question")
+
+    assert "In India" in result
+    assert calls == [
+        {
+            "engine": "google_ai_mode",
+            "q": "specific India question",
+            "gl": "in",
+            "hl": "en",
+            "location": "India",
+            "api_key": "secret",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_search_latest_news_uses_news_engine(monkeypatch) -> None:
+    monkeypatch.setenv("SERPAPI_API_KEY", "secret")
+    calls = []
+
+    async def fake_serpapi_get(params, timeout_seconds=12):
+        calls.append(params)
+        return {
+            "news_results": [
+                {
+                    "title": "India update",
+                    "source": {"name": "Example News"},
+                    "date": "Today",
+                    "link": "https://example.com/news",
+                }
+            ]
+        }
+
+    monkeypatch.setattr("tools._serpapi_get", fake_serpapi_get)
+
+    result = await search_latest_news._func(_FakeContext(), "latest India news")
+
+    assert "India update" in result
+    assert calls[0]["engine"] == "google_news"
 
 
 @pytest.mark.asyncio

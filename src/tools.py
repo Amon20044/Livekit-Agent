@@ -81,6 +81,13 @@ def _source_name(source: Any) -> str | None:
     return None
 
 
+def _google_country_code(location: str) -> str:
+    normalized = location.strip().lower()
+    if "india" in normalized or normalized in {"in", "bharat"}:
+        return "in"
+    return "us"
+
+
 @function_tool
 async def search_latest_news(
     context: RunContext, query: str, location: str = "United States"
@@ -151,12 +158,13 @@ async def search_latest_news(
 
 @function_tool
 async def search_ai_mode(
-    context: RunContext, query: str, location: str = "United States"
+    context: RunContext, query: str, location: str = "India"
 ) -> str:
     """Search Google AI Mode with SerpApi for broad web answers.
 
-    Use this for non-news lookups, comparisons, explanations, recommendations,
-    and general web research where a synthesized answer with sources is helpful.
+    Use this for non-news lookups, comparisons, explanations, India-specific
+    questions, recommendations, and general web research where a synthesized
+    answer with sources is helpful.
     """
     api_key = _clean_env("SERPAPI_API_KEY")
     if not api_key:
@@ -167,7 +175,7 @@ async def search_ai_mode(
     params = {
         "engine": "google_ai_mode",
         "q": query,
-        "gl": "us",
+        "gl": _google_country_code(location),
         "hl": "en",
         "location": location,
         "api_key": api_key,
