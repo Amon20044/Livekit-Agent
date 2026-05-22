@@ -17,10 +17,10 @@ def _clean_env(name: str) -> str | None:
     cleaned = value.strip().strip('"').strip("'")
     return cleaned or None
 
-
+# SerpApi does not have an official async client, so we implement a simple one here.
 async def _serpapi_get(params: dict[str, str], timeout_seconds: int = 12) -> dict:
     timeout = aiohttp.ClientTimeout(total=timeout_seconds)
-    async with (
+    async with ( 
         aiohttp.ClientSession(timeout=timeout) as session,
         session.get(SERPAPI_URL, params=params) as response,
     ):
