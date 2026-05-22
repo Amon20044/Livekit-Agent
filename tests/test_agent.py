@@ -23,14 +23,22 @@ from inferences.llm import (
 from inferences.tts import _build_tts
 from inferences.turn import _build_turn_handling_options
 from inferences.voice import _build_turn_detector, _deepgram_language
-from prompts.instructions import INITIAL_GREETING_INSTRUCTIONS, build_initial_greeting
+from prompts.instructions import (
+    INITIAL_GREETING_INSTRUCTIONS,
+    build_initial_greeting,
+    build_returning_greeting,
+)
 from telemetry.costs import (
     _cost_delta,
     _format_cost_summary,
     _loggable_costs,
     _session_costs,
 )
-from tools import get_dialed_phone_number, send_confirmed_lead_email_and_save
+from tools import (
+    get_dialed_phone_number,
+    note_lead_progress,
+    send_confirmed_lead_email_and_save,
+)
 
 
 def test_anchor_agent_is_dreamlaunch_intake_focused(monkeypatch) -> None:
@@ -46,7 +54,11 @@ def test_anchor_agent_is_dreamlaunch_intake_focused(monkeypatch) -> None:
     assert (
         "Should I send this brief and booking link to your email?" in agent.instructions
     )
-    assert agent.tools == [send_confirmed_lead_email_and_save, get_dialed_phone_number]
+    assert agent.tools == [
+        send_confirmed_lead_email_and_save,
+        get_dialed_phone_number,
+        note_lead_progress,
+    ]
 
 
 def test_agent_instructions_cover_typed_input_and_readback(monkeypatch) -> None:
@@ -58,6 +70,22 @@ def test_agent_instructions_cover_typed_input_and_readback(monkeypatch) -> None:
     assert "keypad" in instructions
     assert "get_dialed_phone_number" in instructions
     assert "one digit at a time" in instructions
+
+
+def test_returning_greeting_variants(monkeypatch) -> None:
+    monkeypatch.delenv("COMPANY_NAME", raising=False)
+
+    assert build_returning_greeting(None) == build_initial_greeting()
+
+    completed = build_returning_greeting({"status": "completed", "name": "Amon"})
+    assert "Amon" in completed
+    assert "anything more" in completed.lower()
+
+    partial = build_returning_greeting(
+        {"status": "partial", "name": "Amon", "email": "amon@example.com"}
+    )
+    assert "reconnect" in partial.lower()
+    assert "amon@example.com" in partial
 
 
 def test_company_name_is_configurable_via_env(monkeypatch) -> None:
@@ -108,7 +136,11 @@ def test_anchor_agent_uses_english_language_defaults_with_elevenlabs(
 
     assert "English by default" in agent.instructions
     assert "Hindi by default" not in agent.instructions
-    assert agent.tools == [send_confirmed_lead_email_and_save, get_dialed_phone_number]
+    assert agent.tools == [
+        send_confirmed_lead_email_and_save,
+        get_dialed_phone_number,
+        note_lead_progress,
+    ]
 
 
 def test_plugin_model_accepts_prefixed_and_legacy_values() -> None:
@@ -188,20 +220,21 @@ def test_turn_handling_defaults_are_low_latency(monkeypatch) -> None:
     assert options["endpointing"]["mode"] == "dynamic"
     assert options["endpointing"]["min_delay"] == 0.22
     assert options["endpointing"]["max_delay"] == 0.9
-    # Adaptive by default so backchannel ("okay", "right") doesn't interrupt.
-    assert options["interruption"]["mode"] == "adaptive"
+    # VAD by default (adaptive needs LiveKit Cloud); 2 words required to interrupt
+    # so single-word backchannel ("okay", "right") doesn't cut the agent off.
+    assert options["interruption"]["mode"] == "vad"
     assert options["interruption"]["min_duration"] == 0.5
-    assert options["interruption"]["min_words"] == 0
+    assert options["interruption"]["min_words"] == 2
     assert options["preemptive_generation"]["enabled"] is True
     assert options["preemptive_generation"]["preemptive_tts"] is True
 
 
-def test_turn_handling_can_force_vad_interruption(monkeypatch) -> None:
-    monkeypatch.setenv("INTERRUPTION_MODE", "vad")
+def test_turn_handling_min_words_is_configurable(monkeypatch) -> None:
+    monkeypatch.setenv("MIN_INTERRUPTION_WORDS", "0")
 
     options = _build_turn_handling_options(turn_detection=None)
 
-    assert options["interruption"]["mode"] == "vad"
+    assert options["interruption"]["min_words"] == 0
 
 
 def test_turn_handling_allows_explicit_adaptive_interruption(monkeypatch) -> None:

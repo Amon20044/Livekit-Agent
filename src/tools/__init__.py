@@ -16,6 +16,9 @@ from tools.company import (
     normalize_spoken_email as normalize_spoken_email,
 )
 from tools.company import (
+    note_lead_progress as note_lead_progress,
+)
+from tools.company import (
     save_completed_lead_to_redis as save_completed_lead_to_redis,
 )
 from tools.company import (

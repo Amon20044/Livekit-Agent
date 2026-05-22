@@ -130,6 +130,7 @@ async def test_send_confirmed_lead_normalizes_spoken_email(monkeypatch) -> None:
     monkeypatch.setattr(
         dreamlaunch, "save_completed_lead_to_redis", lambda **kw: {"lead_id": "lead_x"}
     )
+    monkeypatch.setattr(dreamlaunch, "save_caller_memory", lambda **kw: None)
 
     async def fake_end(context):
         events.append("end")
@@ -293,9 +294,13 @@ async def test_send_confirmed_lead_email_and_save_sends_then_saves(monkeypatch) 
     async def fake_end_call(context):
         events.append(("end", context))
 
+    caller_saves = []
     monkeypatch.setattr(dreamlaunch, "send_dreamlaunch_recap_email", fake_send_email)
     monkeypatch.setattr(dreamlaunch, "save_completed_lead_to_redis", fake_save)
     monkeypatch.setattr(dreamlaunch, "_end_room_after_playout", fake_end_call)
+    monkeypatch.setattr(
+        dreamlaunch, "save_caller_memory", lambda **kwargs: caller_saves.append(kwargs)
+    )
 
     result = await dreamlaunch.send_confirmed_lead_email_and_save._func(
         FakeContext(),
@@ -322,3 +327,88 @@ async def test_send_confirmed_lead_email_and_save_sends_then_saves(monkeypatch) 
     assert events[2][0] == "say"
     assert events[3] == "played"
     assert events[4][0] == "end"
+    assert caller_saves == [
+        {
+            "phone": "+918200962735",
+            "status": "completed",
+            "name": "Amon",
+            "email": "amon@example.com",
+            "company": "Arisyn",
+            "reason_for_meet": "Wants to build an MVP",
+            "lead_id": "lead_demo",
+        }
+    ]
+
+
+def test_caller_number_from_room_reads_sip_identity() -> None:
+    class FakeParticipant:
+        identity = "sip_+918200962735"
+
+    class FakeRoom:
+        remote_participants = {"caller": FakeParticipant()}
+
+    assert dreamlaunch.caller_number_from_room(FakeRoom()) == "+918200962735"
+
+
+def test_caller_number_from_room_handles_no_participants() -> None:
+    class FakeRoom:
+        remote_participants = {}
+
+    assert dreamlaunch.caller_number_from_room(FakeRoom()) is None
+
+
+def test_lookup_caller_returns_none_without_phone() -> None:
+    assert dreamlaunch.lookup_caller(None) is None
+    assert dreamlaunch.lookup_caller("") is None
+
+
+def test_save_and_lookup_caller_roundtrip(monkeypatch) -> None:
+    store = {}
+
+    class FakeKV:
+        def set(self, key, value, ex=None):
+            store[key] = value
+
+        def get(self, key):
+            return store.get(key)
+
+    monkeypatch.setattr(dreamlaunch, "_redis_client", lambda: FakeKV())
+
+    record = dreamlaunch.save_caller_memory(
+        phone="+918200962735", status="partial", name="Amon"
+    )
+    assert record["status"] == "partial"
+    assert record["name"] == "Amon"
+
+    got = dreamlaunch.lookup_caller("+918200962735")
+    assert got["phone"] == "+918200962735"
+    assert got["name"] == "Amon"
+
+
+def test_save_caller_memory_skips_without_phone() -> None:
+    assert dreamlaunch.save_caller_memory(phone=None, status="partial") is None
+
+
+def test_lookup_caller_survives_redis_failure(monkeypatch) -> None:
+    def boom():
+        raise RuntimeError("redis down")
+
+    monkeypatch.setattr(dreamlaunch, "_redis_client", boom)
+    assert dreamlaunch.lookup_caller("+918200962735") is None
+
+
+@pytest.mark.asyncio
+async def test_note_lead_progress_accumulates_in_userdata() -> None:
+    userdata = {"lead_progress": {}}
+    context = SimpleNamespace(session=SimpleNamespace(userdata=userdata))
+
+    await dreamlaunch.note_lead_progress._func(context, name="Amon")
+    await dreamlaunch.note_lead_progress._func(
+        context, email="amon at gmail dot com", company="Arisyn"
+    )
+
+    assert userdata["lead_progress"] == {
+        "name": "Amon",
+        "email": "amon@gmail.com",
+        "company": "Arisyn",
+    }

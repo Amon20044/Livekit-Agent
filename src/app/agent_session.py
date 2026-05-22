@@ -20,7 +20,7 @@ from inferences.stt import build_stt
 from inferences.tts import _build_tts
 from inferences.turn import _build_turn_handling_options
 from inferences.voice import _deepgram_language, _tts_provider, _use_elevenlabs_tts
-from prompts.instructions import build_agent_instructions, build_initial_greeting
+from prompts.instructions import build_agent_instructions, build_returning_greeting
 from settings import (
     bedrock_model,
     deepgram_model,
@@ -38,7 +38,12 @@ from telemetry.costs import (
     _pricing_config,
     _session_costs,
 )
-from tools import get_dialed_phone_number, send_confirmed_lead_email_and_save
+from tools import (
+    get_dialed_phone_number,
+    note_lead_progress,
+    send_confirmed_lead_email_and_save,
+)
+from tools.company import caller_number_from_room, lookup_caller, save_caller_memory
 
 logger = logging.getLogger("agent")
 
@@ -47,12 +52,18 @@ class AnchorVoiceAgent(Agent):
     def __init__(self) -> None:
         super().__init__(
             instructions=build_agent_instructions(_use_elevenlabs_tts()),
-            tools=[send_confirmed_lead_email_and_save, get_dialed_phone_number],
+            tools=[
+                send_confirmed_lead_email_and_save,
+                get_dialed_phone_number,
+                note_lead_progress,
+            ],
         )
 
     async def on_enter(self) -> None:
+        userdata = getattr(self.session, "userdata", None)
+        record = userdata.get("returning_caller") if isinstance(userdata, dict) else None
         await self.session.generate_reply(
-            instructions=build_initial_greeting(),
+            instructions=build_returning_greeting(record),
             allow_interruptions=True,
         )
 
@@ -115,6 +126,17 @@ async def entrypoint(ctx: JobContext):
     # DTMF digits so the agent can read them back instead of guessing from speech.
     dtmf_collector = DtmfCollector()
 
+    # Recognize returning callers by phone (telephony only). The lookup is
+    # safe on web sessions (no number -> None) and never raises.
+    caller_phone = caller_number_from_room(ctx.room)
+    returning_caller = lookup_caller(caller_phone)
+    if returning_caller is not None:
+        logger.info(
+            "Returning caller %s recognized (status=%s)",
+            caller_phone,
+            returning_caller.get("status"),
+        )
+
     session = AgentSession(
         stt=build_stt(stt_model, stt_language),
         llm=_build_llm(llm_model),
@@ -129,10 +151,28 @@ async def entrypoint(ctx: JobContext):
             "AEC_WARMUP_DURATION", 0.1, min_value=0.0, max_value=5.0
         ),
         user_away_timeout=None,
-        userdata={"dtmf": dtmf_collector},
+        userdata={
+            "dtmf": dtmf_collector,
+            "caller_phone": caller_phone,
+            "returning_caller": returning_caller,
+            "lead_progress": {},
+            "lead_completed": False,
+        },
     )
 
     register_dtmf_collector(ctx.room, dtmf_collector)
+
+    async def persist_caller_memory():
+        # Save once at call end. A completed lead already wrote a "completed"
+        # record, so only persist partial progress for unfinished calls.
+        if not caller_phone or session.userdata.get("lead_completed"):
+            return
+        progress = session.userdata.get("lead_progress") or {}
+        if not progress:
+            return
+        save_caller_memory(phone=caller_phone, status="partial", **progress)
+
+    ctx.add_shutdown_callback(persist_caller_memory)
 
     @session.on("error")
     def _on_error(ev: ErrorEvent):

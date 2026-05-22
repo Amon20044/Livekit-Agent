@@ -10,11 +10,12 @@ _DEFAULT_TURN_DETECTION = object()
 
 
 def _interruption_mode() -> str:
-    # Default to "adaptive": LiveKit's barge-in model tells genuine interruptions
-    # apart from backchannel ("okay", "right", "uh-huh") so short acknowledgements
-    # don't cut the agent off. It needs aligned-transcript STT (Deepgram provides
-    # this) and LiveKit Cloud inference; otherwise it falls back to VAD on its own.
-    mode = os.getenv("INTERRUPTION_MODE", "adaptive").strip().lower()
+    # Default to "vad". The "adaptive" barge-in model is a LiveKit Cloud feature:
+    # on a self-hosted server it returns 401 from the Cloud gateway, retries
+    # noisily, and falls back to VAD anyway. Set INTERRUPTION_MODE=adaptive only
+    # when the agent runs on LiveKit Cloud. On VAD we filter backchannel via
+    # MIN_INTERRUPTION_WORDS instead (see below).
+    mode = os.getenv("INTERRUPTION_MODE", "vad").strip().lower()
     if mode in {"adaptive", "vad"}:
         return mode
     return "vad"
@@ -46,8 +47,11 @@ def _build_turn_handling_options(
             "min_duration": _env_float(
                 "MIN_INTERRUPTION_DURATION", 0.5, min_value=0.05, max_value=3.0
             ),
+            # Require at least 2 spoken words to interrupt so single-word
+            # backchannel ("okay", "right", "haan", "hmm") doesn't cut the agent
+            # off. Lower to 0/1 for snappier barge-in if responses run long.
             "min_words": _env_int(
-                "MIN_INTERRUPTION_WORDS", 0, min_value=0, max_value=10
+                "MIN_INTERRUPTION_WORDS", 2, min_value=0, max_value=10
             ),
             "discard_audio_if_uninterruptible": True,
             "false_interruption_timeout": _env_float(

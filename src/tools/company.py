@@ -146,6 +146,86 @@ def save_completed_lead_to_redis(
     return lead
 
 
+def _caller_memory_ttl_seconds() -> int:
+    raw_value = _clean_env("CALLER_MEMORY_TTL_SECONDS")
+    if raw_value is None:
+        return 2_592_000  # 30 days
+
+    try:
+        return max(3_600, int(raw_value))
+    except ValueError:
+        logger.warning(
+            "Invalid CALLER_MEMORY_TTL_SECONDS=%r; using 2592000", raw_value
+        )
+        return 2_592_000
+
+
+def _caller_key(phone: str) -> str:
+    return f"dreamlaunch:caller:{phone}"
+
+
+def lookup_caller(phone: str | None) -> dict[str, Any] | None:
+    """Return a stored record for a returning caller, keyed by phone, or None.
+
+    Never raises: a Redis hiccup must not stop a live call from connecting.
+    """
+    if not phone:
+        return None
+    try:
+        raw = _redis_client().get(_caller_key(phone))
+    except Exception:
+        logger.warning("Caller memory lookup failed for %s", phone, exc_info=True)
+        return None
+    if not raw:
+        return None
+    try:
+        record = json.loads(raw)
+    except (TypeError, ValueError):
+        logger.warning("Corrupt caller memory for %s; ignoring", phone)
+        return None
+    return record if isinstance(record, dict) else None
+
+
+def save_caller_memory(
+    *,
+    phone: str | None,
+    status: str,
+    name: str | None = None,
+    email: str | None = None,
+    company: str | None = None,
+    reason_for_meet: str | None = None,
+    lead_id: str | None = None,
+) -> dict[str, Any] | None:
+    """Persist a phone-indexed caller record so a returning caller is recognized.
+
+    Stores nothing when there is no phone number (e.g. web sessions). Never
+    raises on Redis failure; remembering a caller must not break the call.
+    """
+    if not phone:
+        return None
+
+    record = {
+        "phone": phone,
+        "status": status,
+        "name": name,
+        "email": email,
+        "company": company,
+        "reason_for_meet": reason_for_meet,
+        "lead_id": lead_id,
+        "updated_at": int(time.time()),
+    }
+    try:
+        _redis_client().set(
+            _caller_key(phone),
+            json.dumps(record),
+            ex=_caller_memory_ttl_seconds(),
+        )
+    except Exception:
+        logger.warning("Failed to save caller memory for %s", phone, exc_info=True)
+        return None
+    return record
+
+
 def _required_env(name: str) -> str:
     value = _clean_env(name)
     if not value:
@@ -232,8 +312,8 @@ def _get_room_name(context: RunContext) -> str:
     return getattr(room, "name", None) or "unknown-room"
 
 
-def _get_caller_number_from_room(context: RunContext) -> str | None:
-    room = getattr(context.session, "room", None)
+def caller_number_from_room(room) -> str | None:
+    """Extract the caller's phone number from a room's SIP participant identity."""
     participants = getattr(room, "remote_participants", {}) or {}
 
     for participant in participants.values():
@@ -246,6 +326,10 @@ def _get_caller_number_from_room(context: RunContext) -> str | None:
     return None
 
 
+def _get_caller_number_from_room(context: RunContext) -> str | None:
+    return caller_number_from_room(getattr(context.session, "room", None))
+
+
 async def _end_room_after_playout(context: RunContext) -> None:
     job_ctx = get_job_context()
     if job_ctx is not None:
@@ -255,6 +339,42 @@ async def _end_room_after_playout(context: RunContext) -> None:
     shutdown = getattr(context.session, "shutdown", None)
     if callable(shutdown):
         shutdown(drain=True)
+
+
+def _session_userdata(context: RunContext) -> dict[str, Any] | None:
+    userdata = getattr(getattr(context, "session", None), "userdata", None)
+    return userdata if isinstance(userdata, dict) else None
+
+
+@function_tool
+async def note_lead_progress(
+    context: RunContext,
+    name: str | None = None,
+    email: str | None = None,
+    company: str | None = None,
+    reason_for_meet: str | None = None,
+) -> str:
+    """Remember details captured so far this call (in memory only, not saved).
+
+    Call this as you learn the caller's name, email, company, or reason for
+    meeting. If the call ends before completion, this lets a returning caller
+    resume where they left off. It sends nothing and writes nothing to storage
+    during the call.
+    """
+    userdata = _session_userdata(context)
+    if userdata is None:
+        return "Noted."
+
+    progress = userdata.setdefault("lead_progress", {})
+    if name:
+        progress["name"] = name
+    if email:
+        progress["email"] = normalize_spoken_email(email)
+    if company:
+        progress["company"] = company
+    if reason_for_meet:
+        progress["reason_for_meet"] = reason_for_meet
+    return "Noted."
 
 
 @function_tool
@@ -302,6 +422,21 @@ async def send_confirmed_lead_email_and_save(
         email_confirmed=True,
         email_sent=True,
     )
+
+    # Remember this caller by phone so a return call is greeted by name. Marking
+    # the session complete stops the shutdown hook from also writing a "partial".
+    save_caller_memory(
+        phone=caller_number,
+        status="completed",
+        name=name,
+        email=email,
+        company=company,
+        reason_for_meet=reason_for_meet,
+        lead_id=saved["lead_id"],
+    )
+    userdata = _session_userdata(context)
+    if userdata is not None:
+        userdata["lead_completed"] = True
 
     speech = context.session.say(
         "Done. I have sent the recap and booking link to your email. "

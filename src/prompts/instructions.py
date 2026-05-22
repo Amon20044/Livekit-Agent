@@ -25,6 +25,37 @@ def build_initial_greeting() -> str:
 INITIAL_GREETING_INSTRUCTIONS = build_initial_greeting()
 
 
+def build_returning_greeting(record: dict | None) -> str:
+    """Greeting for a recognized returning caller, or the default for a new one."""
+    if not record:
+        return build_initial_greeting()
+
+    company = _company_name()
+    name = (record.get("name") or "").strip()
+
+    if record.get("status") == "completed":
+        who = f" {name}" if name else ""
+        return (
+            f"You are speaking with a returning caller{who} who already completed a "
+            f"brief with {company}. Greet them warmly by name in one short sentence, "
+            "say it's good to hear from them again, and ask if there's anything more "
+            "they'd like to know about us."
+        )
+
+    known = ", ".join(
+        f"{key}: {record[key]}"
+        for key in ("name", "email", "company", "reason_for_meet")
+        if record.get(key)
+    )
+    known_line = f" You already have {known}." if known else ""
+    return (
+        "You are speaking with a returning caller who started but did not finish "
+        f"earlier.{known_line} Greet them warmly as {company} in one short sentence, "
+        "say you're happy to reconnect, and offer to pick up where you left off. "
+        "Confirm the details you already have instead of asking again."
+    )
+
+
 def _language_instructions(use_elevenlabs: bool) -> str:
     if use_elevenlabs:
         return (
@@ -56,7 +87,8 @@ def build_agent_instructions(use_elevenlabs: bool) -> str:
 # Intake goal
 - Discover what the caller wants to build, then collect only: name, email, company, and reason for meeting.
 - Keep name, email, company, and reason for meeting in conversation context during the call.
-- Do not save anything to Redis while the call is active.
+- As you learn each detail, call note_lead_progress so the caller can resume if they reconnect later. This only updates in-memory notes; it saves nothing during the call.
+- If the caller is returning, confirm the details you already have instead of asking for them again.
 - Do not mention Redis, SMTP, tooling, or internal storage to the caller.
 
 # Capturing email and phone (important)
