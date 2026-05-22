@@ -22,7 +22,7 @@ from inferences.llm import (
 )
 from inferences.tts import _build_tts
 from inferences.turn import _build_turn_handling_options
-from inferences.voice import _build_turn_detector, _deepgram_language
+from inferences.voice import _build_turn_detector, _stt_language
 from prompts.instructions import (
     INITIAL_GREETING_INSTRUCTIONS,
     build_initial_greeting,
@@ -159,37 +159,78 @@ def test_plugin_model_accepts_prefixed_and_legacy_values() -> None:
     assert _plugin_model("sarvam/bulbul:v3", "sarvam") == "bulbul:v3"
 
 
-def test_build_stt_enables_smart_format_by_default(monkeypatch) -> None:
+def test_build_stt_uses_speechmatics_defaults_from_reference_config(
+    monkeypatch,
+) -> None:
     captured: dict = {}
 
     class FakeSTT:
         def __init__(self, **kwargs) -> None:
             captured.update(kwargs)
 
-    monkeypatch.setattr(stt_module.deepgram, "STT", FakeSTT)
-    monkeypatch.delenv("DEEPGRAM_SMART_FORMAT", raising=False)
+    monkeypatch.setattr(stt_module.speechmatics, "STT", FakeSTT)
+    monkeypatch.delenv("SPEECHMATICS_OPERATING_POINT", raising=False)
+    monkeypatch.delenv("SPEECHMATICS_INCLUDE_PARTIALS", raising=False)
+    monkeypatch.delenv("SPEECHMATICS_MAX_DELAY", raising=False)
+    monkeypatch.delenv("SPEECHMATICS_END_OF_UTTERANCE_SILENCE_TRIGGER", raising=False)
+    monkeypatch.setenv("SPEECHMATICS_TURN_DETECTION_MODE", "fixed")
+    monkeypatch.delenv("SPEECHMATICS_ENABLE_DIARIZATION", raising=False)
 
-    stt_module.build_stt("nova-3", "multi")
+    stt_module.build_stt("en")
 
-    # smart_format makes spoken emails/phone numbers transcribe in written form.
-    assert captured["smart_format"] is True
-    assert captured["interim_results"] is True
-    assert captured["no_delay"] is True
+    assert captured["language"] == "en"
+    assert (
+        captured["operating_point"] == stt_module.speechmatics.OperatingPoint.ENHANCED
+    )
+    assert captured["include_partials"] is True
+    assert captured["max_delay"] == 0.7
+    assert captured["end_of_utterance_silence_trigger"] == 0.5
+    assert (
+        captured["turn_detection_mode"]
+        == stt_module.speechmatics.TurnDetectionMode.SMART_TURN
+    )
+    assert captured["enable_diarization"] is True
+    assert captured["speaker_active_format"] == "<{speaker_id}>{text}</{speaker_id}>"
+    assert captured["speaker_passive_format"] == "[{speaker_id}^PASSIVE*] {text}"
+    assert [
+        (entry.content, entry.sounds_like) for entry in captured["additional_vocab"]
+    ] == [
+        ("LiveKit", ["live kit"]),
+        ("Woice", ["voice"]),
+        ("2000", ["two thousands"]),
+        ("Speechmatics", ["speech-matics"]),
+    ]
 
 
-def test_build_stt_smart_format_can_be_disabled(monkeypatch) -> None:
+def test_build_stt_speechmatics_latency_and_diarization_are_configurable(
+    monkeypatch,
+) -> None:
     captured: dict = {}
 
     class FakeSTT:
         def __init__(self, **kwargs) -> None:
             captured.update(kwargs)
 
-    monkeypatch.setattr(stt_module.deepgram, "STT", FakeSTT)
-    monkeypatch.setenv("DEEPGRAM_SMART_FORMAT", "false")
+    monkeypatch.setattr(stt_module.speechmatics, "STT", FakeSTT)
+    monkeypatch.setenv("SPEECHMATICS_OPERATING_POINT", "standard")
+    monkeypatch.setenv("SPEECHMATICS_INCLUDE_PARTIALS", "false")
+    monkeypatch.setenv("SPEECHMATICS_MAX_DELAY", "1.1")
+    monkeypatch.setenv("SPEECHMATICS_END_OF_UTTERANCE_SILENCE_TRIGGER", "0.8")
+    monkeypatch.setenv("SPEECHMATICS_ENABLE_DIARIZATION", "false")
 
-    stt_module.build_stt("nova-3", "multi")
+    stt_module.build_stt("en")
 
-    assert captured["smart_format"] is False
+    assert (
+        captured["operating_point"] == stt_module.speechmatics.OperatingPoint.STANDARD
+    )
+    assert captured["include_partials"] is False
+    assert captured["max_delay"] == 1.1
+    assert captured["end_of_utterance_silence_trigger"] == 0.8
+    assert (
+        captured["turn_detection_mode"]
+        == stt_module.speechmatics.TurnDetectionMode.SMART_TURN
+    )
+    assert captured["enable_diarization"] is False
 
 
 def test_env_bool(monkeypatch) -> None:
@@ -323,23 +364,31 @@ def test_use_el_defaults_speech_stack_to_english(monkeypatch) -> None:
         pass
 
     monkeypatch.setenv("USE_EL", "true")
-    monkeypatch.delenv("DEEPGRAM_STT_LANGUAGE", raising=False)
+    monkeypatch.delenv("SPEECHMATICS_STT_LANGUAGE", raising=False)
+    monkeypatch.delenv("ELEVENLABS_SPEECHMATICS_STT_LANGUAGE", raising=False)
     monkeypatch.setattr(voice_module, "EnglishModel", FakeEnglishModel)
 
-    assert _deepgram_language() == "en"
+    assert _stt_language() == "en"
     assert isinstance(_build_turn_detector(), FakeEnglishModel)
 
 
-def test_sarvam_defaults_speech_stack_to_multilingual(monkeypatch) -> None:
+def test_sarvam_defaults_speechmatics_stack_to_english(monkeypatch) -> None:
     class FakeMultilingualModel:
         pass
 
     monkeypatch.setenv("USE_EL", "false")
-    monkeypatch.delenv("DEEPGRAM_STT_LANGUAGE", raising=False)
+    monkeypatch.delenv("SPEECHMATICS_STT_LANGUAGE", raising=False)
     monkeypatch.setattr(voice_module, "MultilingualModel", FakeMultilingualModel)
 
-    assert _deepgram_language() == "multi"
+    assert _stt_language() == "en"
     assert isinstance(_build_turn_detector(), FakeMultilingualModel)
+
+
+def test_speechmatics_language_is_configurable(monkeypatch) -> None:
+    monkeypatch.setenv("USE_EL", "false")
+    monkeypatch.setenv("SPEECHMATICS_STT_LANGUAGE", "hi")
+
+    assert _stt_language() == "hi"
 
 
 def test_gemini_25_defaults_to_fast_thinking_and_compact_output(monkeypatch) -> None:
@@ -484,9 +533,9 @@ def test_sarvam_tts_uses_multilingual_indian_defaults(monkeypatch) -> None:
     assert tts._opts.speaker == "shubh"
 
 
-def test_session_costs_include_deepgram_gemini_and_sarvam() -> None:
+def test_session_costs_include_speechmatics_gemini_and_sarvam() -> None:
     pricing = {
-        "deepgram_stt_per_minute": 0.0077,
+        "speechmatics_stt_per_minute": 0.01,
         "gemini_input_per_1m": 0.10,
         "gemini_output_per_1m": 0.40,
         "sarvam_tts_per_1k_chars": 0.02,
@@ -507,15 +556,15 @@ def test_session_costs_include_deepgram_gemini_and_sarvam() -> None:
 
     costs = _session_costs(usage, pricing, tts_provider="sarvam")
 
-    assert costs["deepgram"] == pytest.approx(0.0077)
+    assert costs["speechmatics"] == pytest.approx(0.01)
     assert costs["llm"] == pytest.approx(0.275)
     assert costs["sarvam"] == pytest.approx(0.02)
-    assert costs["total"] == pytest.approx(0.3027)
+    assert costs["total"] == pytest.approx(0.305)
 
 
-def test_session_costs_include_deepgram_gemini_and_elevenlabs() -> None:
+def test_session_costs_include_speechmatics_gemini_and_elevenlabs() -> None:
     pricing = {
-        "deepgram_stt_per_minute": 0.0077,
+        "speechmatics_stt_per_minute": 0.01,
         "gemini_input_per_1m": 0.10,
         "gemini_output_per_1m": 0.40,
         "sarvam_tts_per_1k_chars": 0.02,
@@ -536,26 +585,26 @@ def test_session_costs_include_deepgram_gemini_and_elevenlabs() -> None:
 
     costs = _session_costs(usage, pricing, tts_provider="elevenlabs")
 
-    assert costs["deepgram"] == pytest.approx(0.0077)
+    assert costs["speechmatics"] == pytest.approx(0.01)
     assert costs["llm"] == pytest.approx(0.275)
     assert costs["elevenlabs"] == pytest.approx(0.05)
-    assert costs["total"] == pytest.approx(0.3327)
+    assert costs["total"] == pytest.approx(0.335)
 
 
 def test_cost_delta_and_summary_format() -> None:
-    current = {"deepgram": 0.02, "llm": 0.03, "sarvam": 0.04, "total": 0.09}
-    previous = {"deepgram": 0.01, "llm": 0.01, "sarvam": 0.03, "total": 0.05}
+    current = {"speechmatics": 0.02, "llm": 0.03, "sarvam": 0.04, "total": 0.09}
+    previous = {"speechmatics": 0.01, "llm": 0.01, "sarvam": 0.03, "total": 0.05}
 
     delta = _cost_delta(current, previous)
 
     assert delta == pytest.approx(
-        {"deepgram": 0.01, "llm": 0.02, "sarvam": 0.01, "total": 0.04}
+        {"speechmatics": 0.01, "llm": 0.02, "sarvam": 0.01, "total": 0.04}
     )
     assert _format_cost_summary(delta) == (
-        "deepgram=$0.010000 llm=$0.020000 sarvam=$0.010000 total=$0.040000"
+        "speechmatics=$0.010000 llm=$0.020000 sarvam=$0.010000 total=$0.040000"
     )
     assert _loggable_costs(delta) == {
-        "deepgram": "$0.010000",
+        "speechmatics": "$0.010000",
         "llm": "$0.020000",
         "sarvam": "$0.010000",
         "total": "$0.040000",

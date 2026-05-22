@@ -18,14 +18,13 @@ COMPANY_NAME = os.getenv("COMPANY_NAME", "Woice AI")
 COMPANY_WEBSITE = os.getenv("COMPANY_WEBSITE", "https://woice.vercel.app")
 
 # Provider API keys
-deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
+speechmatics_api_key = os.getenv("SPEECHMATICS_API_KEY")
 google_api_key = os.getenv("GOOGLE_API_KEY")
 elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY") or os.getenv("ELEVEN_API_KEY")
 sarvam_api_key = os.getenv("SARVAM_API_KEY")
 groq_api_key = os.getenv("GROQ_API_KEY")
 
 # Model config
-deepgram_model = os.getenv("DEEPGRAM_STT_MODEL", "nova-3")
 elevenlabs_voice_id = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
 sarvam_model = os.getenv("SARVAM_TTS_MODEL", "bulbul:v3")
 sarvam_target_language_code = os.getenv("SARVAM_TARGET_LANGUAGE_CODE", "hi-IN")

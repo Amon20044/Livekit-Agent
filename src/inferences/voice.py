@@ -16,10 +16,17 @@ def _tts_provider(use_elevenlabs: bool | None = None) -> str:
     return "elevenlabs" if use_elevenlabs else "sarvam"
 
 
-def _deepgram_language(use_elevenlabs: bool | None = None) -> str:
+def _stt_language(use_elevenlabs: bool | None = None) -> str:
     if _tts_provider(use_elevenlabs) == "elevenlabs":
-        return os.getenv("ELEVENLABS_DEEPGRAM_STT_LANGUAGE", "en")
-    return os.getenv("DEEPGRAM_STT_LANGUAGE", "multi")
+        return os.getenv(
+            "ELEVENLABS_SPEECHMATICS_STT_LANGUAGE",
+            os.getenv("SPEECHMATICS_STT_LANGUAGE", "en"),
+        )
+    return os.getenv("SPEECHMATICS_STT_LANGUAGE", "en")
+
+
+def _deepgram_language(use_elevenlabs: bool | None = None) -> str:
+    return _stt_language(use_elevenlabs)
 
 
 def _build_turn_detector() -> EnglishModel | MultilingualModel:

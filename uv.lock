@@ -1101,22 +1101,21 @@ wheels = [
 
 [[package]]
 name = "huggingface-hub"
-version = "1.14.0"
+version = "0.36.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "filelock" },
     { name = "fsspec" },
-    { name = "hf-xet", marker = "platform_machine == 'AMD64' or platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64'" },
-    { name = "httpx" },
+    { name = "hf-xet", marker = "platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'x86_64'" },
     { name = "packaging" },
     { name = "pyyaml" },
+    { name = "requests" },
     { name = "tqdm" },
-    { name = "typer" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/39/40/43109e943fd718b0ccd0cd61eb4f1c347df22bf81f5874c6f22adf44bcff/huggingface_hub-1.14.0.tar.gz", hash = "sha256:d6d2c9cd6be1d02ae9ec6672d5587d10a427f377db688e82528f426a041622c2", size = 782365, upload-time = "2026-05-06T14:14:34.278Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/7c/b7/8cb61d2eece5fb05a83271da168186721c450eb74e3c31f7ef3169fa475b/huggingface_hub-0.36.2.tar.gz", hash = "sha256:1934304d2fb224f8afa3b87007d58501acfda9215b334eed53072dd5e815ff7a", size = 649782, upload-time = "2026-02-06T09:24:13.098Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/89/a5/33b49ba7bea7c41bb37f74ec0f8beea0831e052330196633fe2c77516ea6/huggingface_hub-1.14.0-py3-none-any.whl", hash = "sha256:efe075535c62e130b30e836b138e13785f6f043d1f0539e0a39aa411a99e90b8", size = 661479, upload-time = "2026-05-06T14:14:32.029Z" },
+    { url = "https://files.pythonhosted.org/packages/a8/af/48ac8483240de756d2438c380746e7130d1c6f75802ef22f3c6d49982787/huggingface_hub-0.36.2-py3-none-any.whl", hash = "sha256:48f0c8eac16145dfce371e9d2d7772854a4f591bcb56c9cf548accf531d54270", size = 566395, upload-time = "2026-02-06T09:24:11.133Z" },
 ]
 
 [[package]]
@@ -1432,9 +1431,6 @@ codecs = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
-deepgram = [
-    { name = "livekit-plugins-deepgram" },
-]
 elevenlabs = [
     { name = "livekit-plugins-elevenlabs" },
 ]
@@ -1455,6 +1451,9 @@ sarvam = [
 ]
 silero = [
     { name = "livekit-plugins-silero" },
+]
+speechmatics = [
+    { name = "livekit-plugins-speechmatics" },
 ]
 
 [[package]]
@@ -1542,20 +1541,6 @@ wheels = [
 ]
 
 [[package]]
-name = "livekit-plugins-deepgram"
-version = "1.5.8"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "livekit-agents", extra = ["codecs"] },
-    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "numpy", version = "2.4.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/91/36/6fd218b20ac323d560feb04f8436da9b212b2a3a7d7cb696032872bd4a3e/livekit_plugins_deepgram-1.5.8.tar.gz", hash = "sha256:f03943cbfee87448c9749f4737ceacb5935ae828a881970170cdbaa6bf74f3fa", size = 18034, upload-time = "2026-05-05T18:46:58.329Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/95/53/af9f12b604b1c9a0f7b8698aed6705b0107140765b350791a4bfe9e2c85b/livekit_plugins_deepgram-1.5.8-py3-none-any.whl", hash = "sha256:3c131059a9e50f73c5664f358eec523b234241b145fd1906a5966e99ea06206a", size = 22820, upload-time = "2026-05-05T18:46:56.956Z" },
-]
-
-[[package]]
 name = "livekit-plugins-elevenlabs"
 version = "1.5.8"
 source = { registry = "https://pypi.org/simple" }
@@ -1638,6 +1623,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/2c/dc/59849bb0eef9e9f7d8cc9ef460119eb22c849e305be8886743bf93a4b657/livekit_plugins_silero-1.5.8.tar.gz", hash = "sha256:705193cc1c456509f7b9ca9665021e785f10927af08d0047f3df7767a2c160fc", size = 1955609, upload-time = "2026-05-05T18:48:36.269Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ea/f6/c16e9d2d5c6d99ab51598b1dee340a3fdb7a129da90878ebfbf831251aa4/livekit_plugins_silero-1.5.8-py3-none-any.whl", hash = "sha256:9ab53cec7bcf807e92825041103abedda2fc1d96aa0afe84efafcce2834cceeb", size = 3903689, upload-time = "2026-05-05T18:48:33.988Z" },
+]
+
+[[package]]
+name = "livekit-plugins-speechmatics"
+version = "1.5.8"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "livekit-agents" },
+    { name = "speechmatics-voice", extra = ["smart"] },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/04/09/0592f149f7f1e40772be63dd85bff4f3e1c1dcb69b076147f0a2f8c683f7/livekit_plugins_speechmatics-1.5.8.tar.gz", hash = "sha256:f6a1443c71c1f92c0fbf70fbc17f1c050a271fc8aded6d2ac5dfddee045cb0f5", size = 14547, upload-time = "2026-05-05T18:49:01.728Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/db/58/c79a418d937f994731bd6063f3115bb6f91a37c0bb1635b8882cc96cac24/livekit_plugins_speechmatics-1.5.8-py3-none-any.whl", hash = "sha256:39484d48879fe3786095129e12ccdd8303eebae16439e3e8547b76c80ba25430", size = 15698, upload-time = "2026-05-05T18:48:59.286Z" },
 ]
 
 [[package]]
@@ -3316,6 +3314,41 @@ wheels = [
 ]
 
 [[package]]
+name = "speechmatics-rt"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "websockets" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/cc/d4/51ea939b00b2e917a88fec02d8a966716d286f44090af823074a094d9e6b/speechmatics_rt-1.0.0.tar.gz", hash = "sha256:a9dffbd8e8f800e2d7362acb0244fc9ff3ec350c9d8b9c9170339c7c6ca837e1", size = 28100, upload-time = "2026-03-19T10:47:39.106Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2d/44/657b21ca91ae258980b02b680d1d339031db02473e539fb947b6cac62605/speechmatics_rt-1.0.0-py3-none-any.whl", hash = "sha256:fa368c63f07427976bbe93aaed2f6c6c59697207c52cfd05533ae09c0ce32e2e", size = 34088, upload-time = "2026-03-19T10:47:38.068Z" },
+]
+
+[[package]]
+name = "speechmatics-voice"
+version = "0.2.8"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.4.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "pydantic" },
+    { name = "speechmatics-rt" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e4/b2/72b5b2203bbefbd22e7692adaca0dd7c2feebed1aaea5599ec579f74fbbf/speechmatics_voice-0.2.8.tar.gz", hash = "sha256:b2d9cbf773fd94400c744734662e2b16b5bdc4271d0dafde46ac032c438fe000", size = 61419, upload-time = "2026-01-26T16:26:09.082Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/89/2d/a2ab215a7a31fad5ef9267420dc9ced96d6d52e5b80b131ef41424607849/speechmatics_voice-0.2.8-py3-none-any.whl", hash = "sha256:423ac7620ae8c98f175faace2184ac4ab1fe448ffb41af57aae05ec655326f79", size = 57629, upload-time = "2026-01-26T16:26:07.59Z" },
+]
+
+[package.optional-dependencies]
+smart = [
+    { name = "certifi" },
+    { name = "onnxruntime", version = "1.24.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "onnxruntime", version = "1.26.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "transformers" },
+]
+
+[[package]]
 name = "sympy"
 version = "1.14.0"
 source = { registry = "https://pypi.org/simple" }
@@ -3434,23 +3467,24 @@ wheels = [
 
 [[package]]
 name = "transformers"
-version = "5.8.1"
+version = "4.57.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
+    { name = "filelock" },
     { name = "huggingface-hub" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "packaging" },
     { name = "pyyaml" },
     { name = "regex" },
+    { name = "requests" },
     { name = "safetensors" },
     { name = "tokenizers" },
     { name = "tqdm" },
-    { name = "typer" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e7/e6/4134ea2fbea322cddc7ffc94a0d8ee47fe32ce8e876b320cd37d88edfc4d/transformers-5.8.1.tar.gz", hash = "sha256:4dd5b6de4105725104d84fd6abd74b305f4debfc251b38c648ee5dd087cf543b", size = 8532019, upload-time = "2026-05-13T03:21:57.234Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c4/35/67252acc1b929dc88b6602e8c4a982e64f31e733b804c14bc24b47da35e6/transformers-4.57.6.tar.gz", hash = "sha256:55e44126ece9dc0a291521b7e5492b572e6ef2766338a610b9ab5afbb70689d3", size = 10134912, upload-time = "2026-01-16T10:38:39.284Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/fc/b1/8be7e7ef0b5200491312201918b6125ef9c9df9dd0f0240ccef9ac824e6b/transformers-5.8.1-py3-none-any.whl", hash = "sha256:5340fb95962162cdfdae5cc91d7f8fedd92ed75216c1154c5e1f590fcf56dd0e", size = 10632882, upload-time = "2026-05-13T03:21:52.876Z" },
+    { url = "https://files.pythonhosted.org/packages/03/b8/e484ef633af3887baeeb4b6ad12743363af7cce68ae51e938e00aaa0529d/transformers-4.57.6-py3-none-any.whl", hash = "sha256:4c9e9de11333ddfe5114bc872c9f370509198acf0b87a832a0ab9458e2bd0550", size = 11993498, upload-time = "2026-01-16T10:38:31.289Z" },
 ]
 
 [[package]]
@@ -3677,7 +3711,7 @@ dependencies = [
     { name = "aiohttp" },
     { name = "annotated-types" },
     { name = "livekit" },
-    { name = "livekit-agents", extra = ["aws", "deepgram", "elevenlabs", "google", "groq", "sarvam", "silero"] },
+    { name = "livekit-agents", extra = ["aws", "elevenlabs", "google", "groq", "sarvam", "silero", "speechmatics"] },
     { name = "livekit-plugins-ai-coustics" },
     { name = "livekit-plugins-turn-detector" },
     { name = "python-dotenv" },
@@ -3697,7 +3731,7 @@ requires-dist = [
     { name = "aiohttp", specifier = ">=3.9" },
     { name = "annotated-types" },
     { name = "livekit" },
-    { name = "livekit-agents", extras = ["aws", "deepgram", "elevenlabs", "google", "groq", "sarvam", "silero"], specifier = "~=1.5" },
+    { name = "livekit-agents", extras = ["aws", "elevenlabs", "google", "groq", "sarvam", "silero", "speechmatics"], specifier = "~=1.5" },
     { name = "livekit-plugins-ai-coustics", specifier = ">=0.2.13" },
     { name = "livekit-plugins-turn-detector" },
     { name = "python-dotenv", specifier = ">=1.0" },

@@ -8,7 +8,7 @@
 
 Website: [woice.vercel.app](https://woice.vercel.app)
 
-Built on [LiveKit Agents](https://github.com/livekit/agents) with Deepgram, Gemini, Sarvam, ElevenLabs, Redis, and production-grade turn-taking.
+Built on [LiveKit Agents](https://github.com/livekit/agents) with Speechmatics, Gemini, Sarvam, ElevenLabs, Redis, and production-grade turn-taking.
 
 </div>
 
@@ -128,7 +128,7 @@ Twilio / SIP / LiveKit
 LiveKit room
   |
   v
-Deepgram STT
+Speechmatics STT
   |
   v
 Silero VAD + LiveKit multilingual turn detector
@@ -216,9 +216,15 @@ WOICE_REPLY_TO=
 CALLER_MEMORY_TTL_SECONDS=2592000
 LEAD_TTL_SECONDS=86400
 
-DEEPGRAM_STT_MODEL=nova-3
-DEEPGRAM_STT_LANGUAGE=multi
-DEEPGRAM_SMART_FORMAT=true
+SPEECHMATICS_API_KEY=
+SPEECHMATICS_STT_LANGUAGE=en
+SPEECHMATICS_OPERATING_POINT=enhanced
+SPEECHMATICS_INCLUDE_PARTIALS=true
+SPEECHMATICS_MAX_DELAY=0.7
+SPEECHMATICS_END_OF_UTTERANCE_SILENCE_TRIGGER=0.5
+SPEECHMATICS_ENABLE_DIARIZATION=true
+SPEECHMATICS_SPEAKER_ACTIVE_FORMAT="<{speaker_id}>{text}</{speaker_id}>"
+SPEECHMATICS_SPEAKER_PASSIVE_FORMAT="[{speaker_id}^PASSIVE*] {text}"
 
 GEMINI_LLM_MODEL=gemini-2.5-flash-lite
 GEMINI_THINKING_BUDGET=0
@@ -243,6 +249,9 @@ VAD_PREFIX_PADDING_DURATION=0.45
 VAD_ACTIVATION_THRESHOLD=0.52
 VAD_SAMPLE_RATE=16000
 ```
+
+Speechmatics Smart Turn is hard-coded for STT endpointing. Silero VAD still runs
+in `AgentSession` for voice activity and interruption handling.
 
 For LiveKit Cloud deployments, set `INTERRUPTION_MODE=adaptive` after your Cloud inference credentials are working. The code also defaults enhanced noise cancellation to on for `*.livekit.cloud` URLs.
 

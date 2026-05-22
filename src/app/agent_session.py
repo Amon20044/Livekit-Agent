@@ -16,14 +16,13 @@ from app.dtmf import DtmfCollector, register_dtmf_collector
 from audio.background import _build_background_audio_player
 from core.env import _env_bool, _env_float, _env_int, _plugin_model
 from inferences.llm import _build_llm, _llm_provider
-from inferences.stt import build_stt
+from inferences.stt import build_stt, speechmatics_operating_point_name
 from inferences.tts import _build_tts
 from inferences.turn import _build_turn_handling_options
-from inferences.voice import _deepgram_language, _tts_provider, _use_elevenlabs_tts
+from inferences.voice import _stt_language, _tts_provider, _use_elevenlabs_tts
 from prompts.instructions import build_agent_instructions, build_returning_greeting
 from settings import (
     bedrock_model,
-    deepgram_model,
     elevenlabs_voice_id,
     gemini_model,
     groq_model,
@@ -134,8 +133,8 @@ def _room_options() -> room_io.RoomOptions:
 async def entrypoint(ctx: JobContext):
     use_elevenlabs = _use_elevenlabs_tts()
     tts_provider = _tts_provider(use_elevenlabs)
-    stt_language = _deepgram_language(use_elevenlabs)
-    stt_model = _plugin_model(deepgram_model, "deepgram")
+    stt_language = _stt_language(use_elevenlabs)
+    stt_model = speechmatics_operating_point_name()
     llm_provider = _llm_provider()
     if llm_provider == "bedrock":
         llm_model = bedrock_model.strip()
@@ -158,7 +157,7 @@ async def entrypoint(ctx: JobContext):
 
     logger.info(
         "Starting low-latency voice pipeline with stt=%s:%s llm=%s:%s tts_provider=%s tts=%s:%s voice=%s",
-        stt_model,
+        f"speechmatics/{stt_model}",
         stt_language,
         llm_provider,
         llm_model,
@@ -184,7 +183,7 @@ async def entrypoint(ctx: JobContext):
         )
 
     session = AgentSession(
-        stt=build_stt(stt_model, stt_language),
+        stt=build_stt(stt_language),
         llm=_build_llm(llm_model),
         tts=_build_tts(tts_model),
         turn_handling=_build_turn_handling_options(),
@@ -258,7 +257,7 @@ async def entrypoint(ctx: JobContext):
     if _env_bool("COST_LOGGING_ENABLED", False):
         pricing = _pricing_config()
         last_logged_costs = {
-            "deepgram": 0.0,
+            "speechmatics": 0.0,
             "llm": 0.0,
             tts_provider: 0.0,
             "total": 0.0,

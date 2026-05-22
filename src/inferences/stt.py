@@ -1,23 +1,66 @@
-from livekit.plugins import deepgram
+import os
 
-from core.env import _env_bool, _env_int
-from settings import deepgram_api_key
+from livekit.plugins import speechmatics
+
+from core.env import _env_bool, _env_float
 
 
-def build_stt(stt_model: str, stt_language: str) -> deepgram.STT:
-    return deepgram.STT(
-        model=stt_model,
-        language=stt_language,
-        api_key=deepgram_api_key,
-        interim_results=True,
-        no_delay=True,
-        endpointing_ms=_env_int(
-            "DEEPGRAM_ENDPOINTING_MS", 25, min_value=10, max_value=500
+def _speechmatics_operating_point() -> speechmatics.OperatingPoint:
+    value = os.getenv("SPEECHMATICS_OPERATING_POINT", "enhanced")
+    try:
+        return speechmatics.OperatingPoint(value.strip().lower())
+    except ValueError:
+        return speechmatics.OperatingPoint.ENHANCED
+
+
+def speechmatics_operating_point_name() -> str:
+    return _speechmatics_operating_point().value
+
+
+def _additional_vocab() -> list[speechmatics.AdditionalVocabEntry]:
+    return [
+        speechmatics.AdditionalVocabEntry(
+            content="LiveKit",
+            sounds_like=["live kit"],
         ),
-        # smart_format formats spoken numbers, emails, and phone numbers into their
-        # written form (e.g. "nine one eight" -> "918"), which makes capturing
-        # contact details far more reliable. Set DEEPGRAM_SMART_FORMAT=false to
-        # trade this accuracy back for a little latency.
-        smart_format=_env_bool("DEEPGRAM_SMART_FORMAT", True),
-        filler_words=_env_bool("DEEPGRAM_FILLER_WORDS", False),
+        speechmatics.AdditionalVocabEntry(
+            content="Woice",
+            sounds_like=["voice"],
+        ),
+        speechmatics.AdditionalVocabEntry(
+            content="2000",
+            sounds_like=["two thousands"],
+        ),
+        speechmatics.AdditionalVocabEntry(
+            content="Speechmatics",
+            sounds_like=["speech-matics"],
+        ),
+    ]
+
+
+def build_stt(stt_language: str) -> speechmatics.STT:
+    return speechmatics.STT(
+        language=stt_language,
+        operating_point=_speechmatics_operating_point(),
+        include_partials=_env_bool("SPEECHMATICS_INCLUDE_PARTIALS", True),
+        max_delay=_env_float(
+            "SPEECHMATICS_MAX_DELAY", 0.7, min_value=0.7, max_value=4.0
+        ),
+        end_of_utterance_silence_trigger=_env_float(
+            "SPEECHMATICS_END_OF_UTTERANCE_SILENCE_TRIGGER",
+            0.5,
+            min_value=0.05,
+            max_value=1.95,
+        ),
+        turn_detection_mode=speechmatics.TurnDetectionMode.SMART_TURN,
+        enable_diarization=_env_bool("SPEECHMATICS_ENABLE_DIARIZATION", True),
+        speaker_active_format=os.getenv(
+            "SPEECHMATICS_SPEAKER_ACTIVE_FORMAT",
+            "<{speaker_id}>{text}</{speaker_id}>",
+        ),
+        speaker_passive_format=os.getenv(
+            "SPEECHMATICS_SPEAKER_PASSIVE_FORMAT",
+            "[{speaker_id}^PASSIVE*] {text}",
+        ),
+        additional_vocab=_additional_vocab(),
     )
