@@ -1934,49 +1934,6 @@ wheels = [
 ]
 
 [[package]]
-name = "news-anchor-agent"
-version = "1.0.0"
-source = { editable = "." }
-dependencies = [
-    { name = "aiohttp" },
-    { name = "annotated-types" },
-    { name = "livekit" },
-    { name = "livekit-agents", extra = ["aws", "deepgram", "elevenlabs", "google", "groq", "sarvam", "silero"] },
-    { name = "livekit-plugins-ai-coustics" },
-    { name = "livekit-plugins-turn-detector" },
-    { name = "python-dotenv" },
-    { name = "redis" },
-    { name = "sentencepiece" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "ruff" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "aiohttp", specifier = ">=3.9" },
-    { name = "annotated-types" },
-    { name = "livekit" },
-    { name = "livekit-agents", extras = ["aws", "deepgram", "elevenlabs", "google", "groq", "sarvam", "silero"], specifier = "~=1.5" },
-    { name = "livekit-plugins-ai-coustics", specifier = ">=0.2.13" },
-    { name = "livekit-plugins-turn-detector" },
-    { name = "python-dotenv", specifier = ">=1.0" },
-    { name = "redis", specifier = ">=5.0" },
-    { name = "sentencepiece" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "ruff" },
-]
-
-[[package]]
 name = "numpy"
 version = "2.2.6"
 source = { registry = "https://pypi.org/simple" }
@@ -3710,6 +3667,49 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/2b/fb/c492d6daa5ec067c2988ac80c61359ace5c4c674c532985ac5a123436cec/websockets-15.0.1-pp310-pypy310_pp73-manylinux_2_5_x86_64.manylinux1_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:b359ed09954d7c18bbc1680f380c7301f92c60bf924171629c5db97febb12f04", size = 174155, upload-time = "2025-03-05T20:03:25.321Z" },
     { url = "https://files.pythonhosted.org/packages/68/a1/dcb68430b1d00b698ae7a7e0194433bce4f07ded185f0ee5fb21e2a2e91e/websockets-15.0.1-pp310-pypy310_pp73-win_amd64.whl", hash = "sha256:cad21560da69f4ce7658ca2cb83138fb4cf695a2ba3e475e0559e05991aa8122", size = 176884, upload-time = "2025-03-05T20:03:27.934Z" },
     { url = "https://files.pythonhosted.org/packages/fa/a8/5b41e0da817d64113292ab1f8247140aac61cbf6cfd085d6a0fa77f4984f/websockets-15.0.1-py3-none-any.whl", hash = "sha256:f7a866fbc1e97b5c617ee4116daaa09b722101d4a3c170c787450ba409f9736f", size = 169743, upload-time = "2025-03-05T20:03:39.41Z" },
+]
+
+[[package]]
+name = "woice-ai-agent"
+version = "1.0.0"
+source = { editable = "." }
+dependencies = [
+    { name = "aiohttp" },
+    { name = "annotated-types" },
+    { name = "livekit" },
+    { name = "livekit-agents", extra = ["aws", "deepgram", "elevenlabs", "google", "groq", "sarvam", "silero"] },
+    { name = "livekit-plugins-ai-coustics" },
+    { name = "livekit-plugins-turn-detector" },
+    { name = "python-dotenv" },
+    { name = "redis" },
+    { name = "sentencepiece" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "aiohttp", specifier = ">=3.9" },
+    { name = "annotated-types" },
+    { name = "livekit" },
+    { name = "livekit-agents", extras = ["aws", "deepgram", "elevenlabs", "google", "groq", "sarvam", "silero"], specifier = "~=1.5" },
+    { name = "livekit-plugins-ai-coustics", specifier = ">=0.2.13" },
+    { name = "livekit-plugins-turn-detector" },
+    { name = "python-dotenv", specifier = ">=1.0" },
+    { name = "redis", specifier = ">=5.0" },
+    { name = "sentencepiece" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "ruff" },
 ]
 
 [[package]]

@@ -13,7 +13,9 @@ def _interruption_mode() -> str:
     # LiveKit recommends adaptive interruption handling when it is available.
     # It is a LiveKit Cloud feature, so local/self-hosted defaults stay on VAD
     # and filter backchannel with MIN_INTERRUPTION_WORDS instead.
-    default_mode = "adaptive" if ".livekit.cloud" in os.getenv("LIVEKIT_URL", "") else "vad"
+    default_mode = (
+        "adaptive" if ".livekit.cloud" in os.getenv("LIVEKIT_URL", "") else "vad"
+    )
     mode = os.getenv("INTERRUPTION_MODE", default_mode).strip().lower()
     if mode in {"adaptive", "vad"}:
         return mode

@@ -289,9 +289,7 @@ Waitlist page: {waitlist_url}
 def _email_html_body(lead: dict[str, str | None]) -> str:
     company = escape(company_name())
     website = escape(company_website())
-    waitlist_url = escape(
-        _clean_env("WOICE_WAITLIST_URL") or company_website()
-    )
+    waitlist_url = escape(_clean_env("WOICE_WAITLIST_URL") or company_website())
     name = escape(str(lead["name"]))
     email = escape(str(lead["email"]))
     caller_company = escape(str(lead.get("company") or "Not provided"))
