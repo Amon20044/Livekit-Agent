@@ -37,7 +37,7 @@ from telemetry.costs import (
     _pricing_config,
     _session_costs,
 )
-from tools import search_ai_mode, search_latest_news
+from tools import search_ai_mode
 
 logger = logging.getLogger("agent")
 
@@ -46,7 +46,7 @@ class AnchorVoiceAgent(Agent):
     def __init__(self) -> None:
         super().__init__(
             instructions=build_agent_instructions(_use_elevenlabs_tts()),
-            tools=[search_latest_news],
+            tools=[search_ai_mode],
         )
 
     async def on_enter(self) -> None:
