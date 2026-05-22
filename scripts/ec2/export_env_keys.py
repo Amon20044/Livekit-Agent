@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
+# ruff: noqa: UP006, UP035, UP045
 import re
 import shlex
 import sys
 from pathlib import Path
+from typing import Optional, Tuple
 
 KEY_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
-def _parse_env_line(raw_line: str) -> tuple[str, str] | None:
+def _parse_env_line(raw_line: str) -> Optional[Tuple[str, str]]:
     line = raw_line.strip()
     if not line or line.startswith("#") or "=" not in line:
         return None
