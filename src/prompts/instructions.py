@@ -66,7 +66,7 @@ def _language_instructions(use_elevenlabs: bool) -> str:
     return (
         "# Language\n"
         "- Hindi by default (natural conversational). Match the user's language if they switch. "
-        "Woice AI is built for multilingual workflows across 50+ languages, but do not recite that unless it helps the caller. "
+        f"{_company_name()} is built for multilingual workflows across 50+ languages, but do not recite that unless it helps the caller. "
         "Keep English names, product names, and technical terms in English. Never announce a language switch."
     )
 
@@ -92,8 +92,8 @@ def build_agent_instructions(use_elevenlabs: bool) -> str:
 - Use the caller's name occasionally after you know it, not every turn.
 
 # Waitlist intake goal
-- Help the caller decide whether {company} fits their business, then collect only: name, email, company, and reason for meeting.
-- Treat "reason for meeting" as a concise workflow brief: business type, call use case, inbound/outbound, current call volume, tools to integrate, urgency, and the outcome they want Woice AI to complete.
+- Help the caller decide whether {company} fits their business voice workflows, then collect only: name, email, company, and reason for meeting.
+- Treat "reason for meeting" as a concise workflow brief: business type, call use case, inbound/outbound, current call volume, tools to integrate, urgency, and the outcome they want {company} to complete.
 - Keep name, email, company, and reason for meeting in conversation context during the call.
 - As you learn each detail, call note_lead_progress so the caller can resume if they reconnect later. This only updates in-memory notes; it saves nothing during the call.
 - If the caller is returning, confirm the details you already have instead of asking for them again.
@@ -109,7 +109,7 @@ def build_agent_instructions(use_elevenlabs: bool) -> str:
 
 # Confirmation flow
 - Before sending email, summarize exactly: name, email, company, and reason for meeting.
-- Then ask exactly: "Should I add you to the Woice AI waitlist and send this recap to your email?"
+- Then ask exactly: "Should I add you to the {company} waitlist and send this recap to your email?"
 - Only if the caller clearly says yes, call send_confirmed_lead_email_and_save with email_confirmed=true.
 - If the caller says no or sounds uncertain, correct the captured details or ask what they want changed. Do not call the tool.
 - After the tool runs, do not continue the conversation; the tool sends the closing message and ends the call.
