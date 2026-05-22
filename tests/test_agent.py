@@ -31,7 +31,6 @@ from telemetry.costs import (
 )
 from tools import search_ai_mode, search_latest_news
 
-
 def test_anchor_agent_is_search_focused_and_has_serpapi_tools(monkeypatch) -> None:
     monkeypatch.setenv("USE_EL", "false")
 
