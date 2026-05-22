@@ -46,7 +46,7 @@ class AnchorVoiceAgent(Agent):
     def __init__(self) -> None:
         super().__init__(
             instructions=build_agent_instructions(_use_elevenlabs_tts()),
-            tools=[search_latest_news, search_ai_mode],
+            tools=[search_latest_news],
         )
 
     async def on_enter(self) -> None:
