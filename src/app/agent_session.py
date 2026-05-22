@@ -13,7 +13,7 @@ from livekit.agents import (
 from livekit.plugins import ai_coustics, silero
 
 from audio.background import _build_background_audio_player
-from core.env import _env_bool, _env_float, _env_int, _plugin_model
+from core.env import _env_bool, _env_float, _plugin_model
 from inferences.llm import _build_llm, _llm_provider
 from inferences.stt import build_stt
 from inferences.tts import _build_tts
@@ -37,7 +37,7 @@ from telemetry.costs import (
     _pricing_config,
     _session_costs,
 )
-from tools import search_ai_mode
+from tools import send_confirmed_lead_email_and_save
 
 logger = logging.getLogger("agent")
 
@@ -46,7 +46,7 @@ class AnchorVoiceAgent(Agent):
     def __init__(self) -> None:
         super().__init__(
             instructions=build_agent_instructions(_use_elevenlabs_tts()),
-            tools=[search_ai_mode],
+            tools=[send_confirmed_lead_email_and_save],
         )
 
     async def on_enter(self) -> None:

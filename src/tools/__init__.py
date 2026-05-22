@@ -6,6 +6,16 @@ from urllib.parse import urlsplit, urlunsplit
 import aiohttp
 from livekit.agents import RunContext, function_tool
 
+from tools.dreamlaunch import (
+    save_completed_lead_to_redis as save_completed_lead_to_redis,
+)
+from tools.dreamlaunch import (
+    send_confirmed_lead_email_and_save as send_confirmed_lead_email_and_save,
+)
+from tools.dreamlaunch import (
+    send_dreamlaunch_recap_email as send_dreamlaunch_recap_email,
+)
+
 logger = logging.getLogger(__name__)
 SERPAPI_URL = "https://serpapi.com/search"
 

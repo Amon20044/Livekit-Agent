@@ -1,6 +1,8 @@
 from types import SimpleNamespace
 
 import pytest
+from livekit.agents import BuiltinAudioClip, llm
+from livekit.plugins import aws, elevenlabs, groq, sarvam
 
 from app import agent_session as agent_module
 from app.agent_session import AnchorVoiceAgent
@@ -10,18 +12,16 @@ from inferences import llm as llm_module
 from inferences import tts as tts_module
 from inferences import voice as voice_module
 from inferences.llm import (
-    _LatencyOptimizedBedrockLLM,
     _build_bedrock_llm,
     _build_groq_llm,
     _build_llm,
     _build_llm_kwargs,
+    _LatencyOptimizedBedrockLLM,
     _llm_provider,
 )
-from inferences.turn import _build_turn_handling_options
 from inferences.tts import _build_tts
+from inferences.turn import _build_turn_handling_options
 from inferences.voice import _build_turn_detector, _deepgram_language
-from livekit.agents import BuiltinAudioClip, llm
-from livekit.plugins import aws, elevenlabs, groq, sarvam
 from prompts.instructions import INITIAL_GREETING_INSTRUCTIONS
 from telemetry.costs import (
     _cost_delta,
@@ -29,20 +29,23 @@ from telemetry.costs import (
     _loggable_costs,
     _session_costs,
 )
-from tools import search_ai_mode, search_latest_news
+from tools import send_confirmed_lead_email_and_save
 
-def test_anchor_agent_is_search_focused_and_has_serpapi_tools(monkeypatch) -> None:
+
+def test_anchor_agent_is_dreamlaunch_intake_focused(monkeypatch) -> None:
     monkeypatch.setenv("USE_EL", "false")
 
     agent = AnchorVoiceAgent()
 
-    assert "Veena" in agent.instructions
+    assert "DreamLaunch" in agent.instructions
     assert "Hindi by default" in agent.instructions
-    assert "search_latest_news" in agent.instructions
-    assert "search_ai_mode" in agent.instructions
-    # The agent must stay silent during tool calls (no spoken "let me search").
-    assert 'Do NOT say "let me search"' in agent.instructions
-    assert agent.tools == [search_latest_news, search_ai_mode]
+    assert (
+        "Do not save anything to Redis while the call is active" in agent.instructions
+    )
+    assert (
+        "Should I send this brief and booking link to your email?" in agent.instructions
+    )
+    assert agent.tools == [send_confirmed_lead_email_and_save]
 
 
 @pytest.mark.asyncio
@@ -69,8 +72,7 @@ async def test_anchor_agent_greets_and_asks_for_name_on_enter(monkeypatch) -> No
             "allow_interruptions": True,
         }
     ]
-    assert "ask what to call them" in INITIAL_GREETING_INSTRUCTIONS
-    assert "Veena" in INITIAL_GREETING_INSTRUCTIONS
+    assert "DreamLaunch" in INITIAL_GREETING_INSTRUCTIONS
 
 
 def test_anchor_agent_uses_english_language_defaults_with_elevenlabs(
@@ -82,7 +84,7 @@ def test_anchor_agent_uses_english_language_defaults_with_elevenlabs(
 
     assert "English by default" in agent.instructions
     assert "Hindi by default" not in agent.instructions
-    assert agent.tools == [search_latest_news, search_ai_mode]
+    assert agent.tools == [send_confirmed_lead_email_and_save]
 
 
 def test_plugin_model_accepts_prefixed_and_legacy_values() -> None:
