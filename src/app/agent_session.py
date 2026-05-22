@@ -14,7 +14,7 @@ from livekit.plugins import ai_coustics, silero
 
 from app.dtmf import DtmfCollector, register_dtmf_collector
 from audio.background import _build_background_audio_player
-from core.env import _env_bool, _env_float, _plugin_model
+from core.env import _env_bool, _env_float, _env_int, _plugin_model
 from inferences.llm import _build_llm, _llm_provider
 from inferences.stt import build_stt
 from inferences.tts import _build_tts
@@ -48,7 +48,7 @@ from tools.company import caller_number_from_room, lookup_caller, save_caller_me
 logger = logging.getLogger("agent")
 
 
-class AnchorVoiceAgent(Agent):
+class WoiceVoiceAgent(Agent):
     def __init__(self) -> None:
         super().__init__(
             instructions=build_agent_instructions(_use_elevenlabs_tts()),
@@ -71,17 +71,61 @@ class AnchorVoiceAgent(Agent):
 
 
 def prewarm(proc: JobProcess):
-    proc.userdata["vad"] = silero.VAD.load()
+    proc.userdata["vad"] = _build_vad()
+
+
+def _build_vad():
+    return silero.VAD.load(
+        min_speech_duration=_env_float(
+            "VAD_MIN_SPEECH_DURATION", 0.04, min_value=0.01, max_value=0.5
+        ),
+        min_silence_duration=_env_float(
+            "VAD_MIN_SILENCE_DURATION", 0.35, min_value=0.1, max_value=1.2
+        ),
+        prefix_padding_duration=_env_float(
+            "VAD_PREFIX_PADDING_DURATION", 0.45, min_value=0.0, max_value=1.0
+        ),
+        max_buffered_speech=_env_float(
+            "VAD_MAX_BUFFERED_SPEECH", 45.0, min_value=5.0, max_value=120.0
+        ),
+        activation_threshold=_env_float(
+            "VAD_ACTIVATION_THRESHOLD", 0.52, min_value=0.1, max_value=0.95
+        ),
+        sample_rate=_vad_sample_rate(),
+        force_cpu=_env_bool("VAD_FORCE_CPU", True),
+    )
+
+
+def _livekit_cloud_transport() -> bool:
+    return ".livekit.cloud" in (os.getenv("LIVEKIT_URL") or "").lower()
+
+
+def _noise_cancellation_enabled() -> bool:
+    return _env_bool("ENABLE_NOISE_CANCELLATION", _livekit_cloud_transport())
+
+
+def _noise_cancellation_model() -> ai_coustics.EnhancerModel:
+    model_name = os.getenv("NOISE_CANCELLATION_MODEL", "QUAIL_VF_L").strip().upper()
+    return getattr(
+        ai_coustics.EnhancerModel,
+        model_name,
+        ai_coustics.EnhancerModel.QUAIL_VF_L,
+    )
+
+
+def _vad_sample_rate() -> int:
+    configured = _env_int("VAD_SAMPLE_RATE", 16000, min_value=8000, max_value=16000)
+    return 8000 if configured == 8000 else 16000
 
 
 def _room_options() -> room_io.RoomOptions:
     audio_input = True
-    if not _env_bool("ENABLE_NOISE_CANCELLATION", False):
+    if not _noise_cancellation_enabled():
         return room_io.RoomOptions(audio_input=audio_input)
 
     audio_input = room_io.AudioInputOptions(
         noise_cancellation=ai_coustics.audio_enhancement(
-            model=ai_coustics.EnhancerModel.QUAIL_VF_L
+            model=_noise_cancellation_model()
         ),
     )
     return room_io.RoomOptions(audio_input=audio_input)
@@ -192,6 +236,22 @@ async def entrypoint(ctx: JobContext):
         except RuntimeError:
             logger.warning("Could not speak LLM recovery message; session is closing")
 
+    @session.on("user_interruption_detected")
+    def _on_user_interruption_detected(ev):
+        logger.debug(
+            "User interruption detected: timestamp=%s probability=%s",
+            getattr(ev, "timestamp", None),
+            getattr(ev, "probability", None),
+        )
+
+    @session.on("agent_false_interruption")
+    def _on_agent_false_interruption(ev):
+        logger.debug("False interruption detected; resuming agent speech")
+
+    @session.on("user_state_changed")
+    def _on_user_state_changed(ev):
+        logger.debug("User state changed: %s", getattr(ev, "new_state", None))
+
     # Cost accounting runs floating-point math and emits a log line on every usage
     # event, so it stays off the hot path by default. Enable COST_LOGGING_ENABLED
     # only when you need billing visibility.
@@ -254,7 +314,7 @@ async def entrypoint(ctx: JobContext):
 
     await session.start(
         room=ctx.room,
-        agent=AnchorVoiceAgent(),
+        agent=WoiceVoiceAgent(),
         room_options=_room_options(),
     )
 

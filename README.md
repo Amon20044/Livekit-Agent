@@ -1,108 +1,188 @@
 <div align="center">
 
-# 🎙️ Woice
+# Woice AI
 
-### Voice AI agents that actually finish the conversation.
+### Voice that doesn't miss a thing and actually finishes the conversation.
 
-**Real-time, multilingual voice agents that capture the details, read them back, remember the caller, and turn every call into structured, actionable data.**
+**Woice AI is a waitlist-stage voice automation platform for real business workflows: calls come in or go out, AI listens, understands intent, talks naturally, uses tools, saves the result, and escalates when needed.**
 
-Built on [LiveKit Agents](https://github.com/livekit/agents) · Powered by Deepgram, Gemini, Sarvam & ElevenLabs · Designed for India 🇮🇳 and the world.
+Website: [woice.vercel.app](https://woice.vercel.app)
+
+Built on [LiveKit Agents](https://github.com/livekit/agents) with Deepgram, Gemini, Sarvam, ElevenLabs, Redis, and production-grade turn-taking.
 
 </div>
 
 ---
 
+## What this repo is
+
+This project powers the Woice AI onboarding and pre-registration voice agent.
+
+The public website explains the product vision. This agent does the live conversation: it welcomes a visitor, explains Woice in a natural way, learns the workflow they want to automate, confirms their contact details, sends a polished waitlist recap email, and saves the structured lead for follow-up.
+
+Woice is currently in waitlist/pre-registration. The goal is not to promise instant access. The goal is to capture the right early users with the right context so the team can onboard them properly.
+
+---
+
 ## Why Woice
 
-Voice AI demos look magical for thirty seconds. Then you put one on a real phone line and it falls apart on the boring, mission-critical 20%:
+Most voice AI demos feel magical for thirty seconds. Then the real phone call starts:
 
-- It hears **"amon sharma 2000 at gmail dot com"** and writes down garbage.
-- You say **"okay"** while it's talking and it stops dead, thinking you interrupted.
-- A returning caller has to **start from zero** every single time.
-- The call ends and you're left with **an audio file, not a lead.**
+- The caller says `amon sharma 2000 at gmail dot com`, and the system writes garbage.
+- The caller says `okay` while the agent is speaking, and the agent stops dead.
+- A returning caller has to start from zero every time.
+- The call ends, and the business gets an audio file instead of a completed workflow.
 
-Those are the moments that decide whether a voice agent is a toy or a business. **Woice is built around getting those moments right** — accurate data capture, human-like turn-taking, multilingual conversation, and memory across calls — and then turning every call into clean, structured data you can act on.
+Woice AI is built around the boring, mission-critical parts that decide whether a voice agent is a toy or a business system:
 
-The included reference agent is **DreamLaunch Studio**, a voice concierge that qualifies inbound leads, captures their brief, confirms it, and emails a recap with a booking link — fully in Hindi or English. It's a working blueprint for any "answer, qualify, capture, book" voice workflow: agencies, clinics, real estate, support desks, and beyond.
+- Reliable email and phone capture with readback confirmation.
+- Natural multilingual calls across Hindi, English, and 50+ language workflows.
+- Smart interruptions that ignore short backchannel like "okay" and "right".
+- Returning-caller memory for phone-based recognition.
+- Structured outcomes saved to the database.
+- Follow-up email that feels premium and welcoming.
+- A workflow layer that can connect to CRM, calendar, knowledge base, payments, support, messaging, and internal tools.
+
+The value is not "AI can talk." The value is: **AI can talk and take action inside business systems.**
 
 ---
 
-## ✨ What happens on a call
+## What the waitlist agent does
 
-These are the caller-facing features — what someone actually experiences when they talk to a Woice agent.
+On every call, the Woice AI concierge:
 
-| Feature | What the caller feels |
+1. Greets the caller as Woice AI.
+2. Explains the product as a voice workflow automation layer.
+3. Asks what call workflow the user wants to automate.
+4. Captures name, email, company, and workflow brief.
+5. Reads back email and phone details before using them.
+6. Confirms consent before saving or sending anything.
+7. Sends a beautiful branded waitlist recap email.
+8. Saves the structured lead in Redis.
+9. Remembers phone callers for 30 days so they can resume later.
+
+The workflow brief can include business type, inbound/outbound calls, current call volume, tools to integrate, urgency, and the exact outcome the user wants Woice to complete.
+
+---
+
+## Best use cases
+
+Woice is strongest where calls are repetitive, high-volume, outcome-driven, and connected to existing software.
+
+| Industry | Workflow Woice can complete |
 |---|---|
-| 🗣️ **Natural multilingual conversation** | Speaks Hindi by default and switches to the caller's language mid-sentence — no robotic "please select a language." |
-| ⚡ **Sub-second responsiveness** | Tuned end-to-end for "first useful audio" — interim transcripts, preemptive generation, and streaming TTS mean replies start almost immediately. |
-| 🤫 **Smart interruption handling** | Single-word backchannel like *"okay," "right," "uh-huh"* no longer cuts the agent off — interrupting takes a real, multi-word utterance. Upgradable to LiveKit Cloud's adaptive barge-in model. |
-| 🧠 **Remembers returning callers** | On phone calls, a caller is recognized by number — greeted by name if they finished before, or offered to pick up where they left off if they didn't. |
-| 📧 **Reliable email & phone capture** | Callers can **type** their email/phone into the chat, **say** it slowly, or **enter it on the keypad** — and the agent always **reads it back to confirm.** |
-| 🔢 **Keypad (DTMF) entry** | On phone calls, callers punch in their number on the dial pad and press `#`. No more spelling out ten digits over a noisy line. |
-| ✅ **Confirm-before-commit** | The agent summarizes everything it captured and asks permission before sending anything. Malformed emails are caught and re-collected, never silently sent. |
-| 🔎 **Live web knowledge** | Can pull current information mid-conversation via real-time search (Google News / AI Mode) when the caller asks about something recent. |
-| 🎧 **A room that feels alive** | Subtle background ambience and quiet "thinking" sounds keep the call from feeling sterile or dropped. |
-| 📨 **A real outcome** | Ends with an emailed recap + booking link, and a structured lead saved to the database — not just a transcript. |
+| Clinics and hospitals | Book appointments, collect symptoms, send confirmations, update patient CRM |
+| Real estate | Qualify property leads, answer inventory questions, book site visits, alert sales |
+| E-commerce and logistics | Verify caller, check order status, create tickets, send updates |
+| EdTech and coaching | Explain programs, qualify students, book demo classes, send brochures |
+| Support teams | Intake issues, create tickets, attach summaries, escalate urgent cases |
+| Sales teams | Handle missed calls, qualify leads, schedule meetings, update CRM |
+| Finance and collections | Payment reminders, payment-link requests, callback scheduling |
+| Recruitment | Screen applicants, capture availability, summarize fit, hand off to humans |
+
+Bad use case: "Talk like a human for fun."
+
+Good use case: "Qualify 500 real estate leads per day and book site visits automatically."
 
 ---
 
-## 🧰 What the platform gives builders
+## Integrations Woice is built for
 
-The features under the hood that make Woice agents reliable and extensible.
+Woice is a 3rd-gen voice automation layer: telephony in, business outcome out.
 
-- **🔌 Swappable model stack.** LLM, STT, and TTS are all pluggable via environment variables — no code changes to switch providers.
-  - **STT:** Deepgram `nova-3` (multilingual, smart-formatted for clean emails/numbers)
-  - **LLM:** Google Gemini 2.5 Flash Lite by default, with AWS Bedrock and Groq as drop-in alternatives, plus an automatic fallback adapter
-  - **TTS:** Sarvam Bulbul (Indian languages) or ElevenLabs (English), selectable per deployment
-- **🧠 Adaptive turn-taking.** Silero VAD + LiveKit's multilingual turn detector + adaptive interruption, all tunable.
-- **🛠️ Function-tool framework.** Tools are plain Python functions — lead capture + email, DTMF retrieval, and live search ship in the box; add your own in minutes.
-- **🗃️ Stateful by design.** Redis-backed lead storage with TTLs, ready to grow into full cross-call memory (see [Roadmap](#-roadmap)).
-- **💰 Cost & usage telemetry.** Optional per-turn and per-call cost accounting across STT/LLM/TTS, plus LiveKit observability.
-- **🧪 Test-driven.** A full `pytest` suite covers instructions, tools, turn-handling, capture/validation, and DTMF — agent behavior is verified, not guessed.
-- **🚀 Deploy anywhere.** Production `Dockerfile`, LiveKit Cloud support, and one-command EC2 deploy scripts + GitHub Actions.
+| Layer | Examples |
+|---|---|
+| Telephony | Twilio, SIP, LiveKit SIP, Exotel, Plivo, Telnyx, Vonage |
+| CRM | HubSpot, Salesforce, Zoho, Pipedrive, Freshsales, custom CRM |
+| Calendar | Google Calendar, Outlook, Cal.com, Calendly, internal booking systems |
+| Knowledge | Website pages, PDFs, Notion, Google Drive, docs, databases, help centers |
+| Automation | Zapier, Make, n8n, Pipedream, webhooks |
+| Support | Zendesk, Freshdesk, Intercom, Gorgias, ServiceNow |
+| Messaging | WhatsApp, SMS, email, Slack, Discord, Telegram |
+| Payments | Razorpay, Stripe, payment-link APIs |
 
----
+Typical webhook events:
 
-## 🏗️ How it works
-
-```text
- caller (web / phone / SIP)
-        │  audio
-        ▼
- ┌──────────────┐   ┌──────────────────┐   ┌──────────────┐   ┌──────────────┐
- │ LiveKit room │──▶│ Deepgram STT     │──▶│ Turn handling│──▶│ Gemini LLM   │
- │ (WebRTC/SIP) │   │ (multilingual,   │   │ VAD + turn   │   │ + tools      │
- │              │   │  smart-format)   │   │ detector +   │   │ (lead, DTMF, │
- │              │◀──│                  │◀──│ adaptive     │◀──│  search...)  │
- └──────┬───────┘   └──────────────────┘   │ interruption │   └──────┬───────┘
-        │  audio out                        └──────────────┘          │
-        ▼                                                             ▼
-   Sarvam / ElevenLabs TTS  ◀───────────────────────────────  Redis (lead state)
-        +                                                             │
-   background ambience track                                          ▼
-                                                          Email recap + booking link
+```json
+{
+  "event": "lead.qualified",
+  "caller": "+919876543210",
+  "name": "Rahul",
+  "intent": "book_demo",
+  "summary": "Interested in weekend Java backend course",
+  "next_action": "send_payment_link"
+}
 ```
 
-Text input rides the same pipeline: anything the caller **types** arrives on LiveKit's `lk.chat` stream and is handled exactly like speech — which is why typing an email "just works" alongside talking.
+---
+
+## Architecture
+
+```text
+Caller
+  |
+  v
+Twilio / SIP / LiveKit
+  |
+  v
+LiveKit room
+  |
+  v
+Deepgram STT
+  |
+  v
+Silero VAD + LiveKit multilingual turn detector
+  |
+  v
+Gemini / Bedrock / Groq LLM
+  |
+  v
+Tool router
+  |-- waitlist lead capture
+  |-- DTMF keypad phone capture
+  |-- live web search
+  |-- Redis caller memory
+  |-- email recap
+  |
+  v
+Sarvam / ElevenLabs TTS
+  |
+  v
+Structured lead + beautiful waitlist email
+```
+
+Typed input rides the same LiveKit `lk.chat` pipeline as speech, so a caller can type an email address and the agent handles it just like spoken input.
 
 ---
 
-## 🚀 Quickstart
+## Production conversation feel
 
-This project uses the [`uv`](https://docs.astral.sh/uv/) package manager.
+The agent is tuned for a natural, marketable voice experience:
+
+- Short spoken responses, usually one to three sentences.
+- Hindi by default on Sarvam, English by default on ElevenLabs.
+- Mid-sentence language matching without announcing a language switch.
+- Email readback before commit.
+- Confirm-before-save behavior.
+- False-interruption recovery.
+- Preemptive generation and TTS for fast first audio.
+- Silero VAD with explicit production defaults.
+- LiveKit multilingual turn detector.
+- LiveKit Cloud adaptive interruption when available.
+- Enhanced noise cancellation enabled automatically for `*.livekit.cloud` projects.
+
+The practical target is: fast enough to feel alive, careful enough to not lose the lead.
+
+---
+
+## Quickstart
+
+This project uses [`uv`](https://docs.astral.sh/uv/).
 
 ```bash
-# 1. Install dependencies
 uv sync
-
-# 2. Configure your environment
-#    Copy the example and fill in your keys (LiveKit, Deepgram, Gemini, Sarvam/ElevenLabs, Redis, SMTP)
 cp .env.example .env.local
-
-# 3. Download required models (Silero VAD + turn detector) — first run only
 uv run python src/agent.py download-files
-
-# 4. Talk to the agent right in your terminal
 uv run python src/agent.py console
 ```
 
@@ -110,200 +190,121 @@ Run modes:
 
 | Command | Use it for |
 |---|---|
-| `uv run python src/agent.py console` | Talk to the agent locally in your terminal |
-| `uv run python src/agent.py dev` | Run against a real frontend or telephony (dev) |
+| `uv run python src/agent.py console` | Local terminal conversation |
+| `uv run python src/agent.py dev` | Development worker for web/telephony |
 | `uv run python src/agent.py start` | Production worker |
 
-> **Tip:** You can load your LiveKit credentials automatically with the [LiveKit CLI](https://docs.livekit.io/intro/basics/cli/): `lk cloud auth && lk app env -w -d .env.local`.
-
-### Frontends & telephony
-
-Woice works with any [custom web/mobile frontend](https://docs.livekit.io/frontends/) or [telephony](https://docs.livekit.io/telephony/) setup. The fastest start is the React app — and because it has a chat box, the **type-your-email** flow works out of the box:
-
-| Platform | Starter |
-|---|---|
-| **Web (React/Next.js)** | [`agent-starter-react`](https://github.com/livekit-examples/agent-starter-react) |
-| **iOS / macOS** | [`agent-starter-swift`](https://github.com/livekit-examples/agent-starter-swift) |
-| **Flutter** | [`agent-starter-flutter`](https://github.com/livekit-examples/agent-starter-flutter) |
-| **React Native** | [`voice-assistant-react-native`](https://github.com/livekit-examples/voice-assistant-react-native) |
-| **Android** | [`agent-starter-android`](https://github.com/livekit-examples/agent-starter-android) |
-| **Web Embed** | [`agent-starter-embed`](https://github.com/livekit-examples/agent-starter-embed) |
-| **Telephony (SIP)** | [Docs](https://docs.livekit.io/telephony/) — enables inbound calls + DTMF keypad capture |
-
----
-
-## 🧪 Tests
-
-Agent behavior is covered by a `pytest` suite. **When you change instructions, tools, or turn-handling, write the test first** (see [AGENTS.md](AGENTS.md)).
+LiveKit credentials can be loaded with the LiveKit CLI:
 
 ```bash
-uv run pytest          # run everything
-uv run ruff format     # format
-uv run ruff check      # lint
+lk cloud auth
+lk app env -w -d .env.local
 ```
+
+This repo expects the LiveKit CLI docs features from `lk` 2.15.0+. If your CLI is older, upgrade before using `lk docs`.
 
 ---
 
-## ⚙️ Configuration & tuning
-
-Woice is tuned for a fast, lively voice experience and is controlled almost entirely through environment variables in `.env.local`. The headline knobs:
-
-### Conversation feel
+## Key configuration
 
 ```env
-# Turn-taking & interruptions
-INTERRUPTION_MODE=vad             # vad | adaptive  — adaptive barge-in needs LiveKit Cloud
-MIN_INTERRUPTION_WORDS=2          # words required to interrupt; filters "okay"/"right" backchannel
-MIN_ENDPOINTING_DELAY=0.22        # how soon the agent may answer after a pause
-MAX_ENDPOINTING_DELAY=0.9         # cap on how long it waits when unsure
-ENDPOINTING_MODE=dynamic
+COMPANY_NAME=Woice AI
+COMPANY_WEBSITE=https://woice.vercel.app
+WOICE_WAITLIST_URL=https://woice.vercel.app
+WOICE_REPLY_TO=
 
-# Brand (one codebase, many studios) + caller memory
-COMPANY_NAME=DreamLaunch Studio
-COMPANY_WEBSITE=https://dreamlaunch.studio
-CALLER_MEMORY_TTL_SECONDS=2592000  # how long a returning caller is remembered (30 days)
+CALLER_MEMORY_TTL_SECONDS=2592000
+LEAD_TTL_SECONDS=86400
 
-# Speech recognition
-DEEPGRAM_STT_MODEL=nova-3-general
+DEEPGRAM_STT_MODEL=nova-3
 DEEPGRAM_STT_LANGUAGE=multi
-DEEPGRAM_SMART_FORMAT=true         # formats spoken emails & numbers — keep on for capture accuracy
+DEEPGRAM_SMART_FORMAT=true
 
-# Reasoning budget (kept low for snappy spoken replies)
 GEMINI_LLM_MODEL=gemini-2.5-flash-lite
 GEMINI_THINKING_BUDGET=0
 GEMINI_MAX_OUTPUT_TOKENS=220
-```
 
-> **Interruption modes:** the default `vad` works everywhere and filters single-word backchannel via `MIN_INTERRUPTION_WORDS`. The smarter `adaptive` barge-in model runs on **LiveKit Cloud** inference (needs aligned-transcript STT — Deepgram qualifies). On a self-hosted server it returns `401` and falls back to VAD after a few noisy retries, so keep `vad` unless you deploy on LiveKit Cloud.
-
-### Latency presets
-
-Drop one of these into `.env.local` depending on your priority:
-
-<details>
-<summary><b>Fastest</b> — responsiveness over polish</summary>
-
-```env
-MIN_ENDPOINTING_DELAY=0.15
-MAX_ENDPOINTING_DELAY=0.65
-GEMINI_MAX_OUTPUT_TOKENS=160
-SARVAM_MIN_BUFFER_SIZE=30
-SARVAM_MAX_CHUNK_LENGTH=100
-BACKGROUND_AMBIENT_VOLUME=0.10
-```
-</details>
-
-<details open>
-<summary><b>Balanced</b> — the current default</summary>
-
-```env
 MIN_ENDPOINTING_DELAY=0.22
 MAX_ENDPOINTING_DELAY=0.9
-GEMINI_MAX_OUTPUT_TOKENS=220
-SARVAM_MIN_BUFFER_SIZE=50
-SARVAM_MAX_CHUNK_LENGTH=150
-BACKGROUND_AMBIENT_VOLUME=0.18
+ENDPOINTING_MODE=dynamic
+
+INTERRUPTION_MODE=vad
+MIN_INTERRUPTION_DURATION=0.5
+MIN_INTERRUPTION_WORDS=2
+FALSE_INTERRUPTION_TIMEOUT=2.0
+
+PREEMPTIVE_GENERATION=true
+PREEMPTIVE_TTS=true
+PREEMPTIVE_MAX_SPEECH_DURATION=2.5
+
+VAD_MIN_SPEECH_DURATION=0.04
+VAD_MIN_SILENCE_DURATION=0.35
+VAD_PREFIX_PADDING_DURATION=0.45
+VAD_ACTIVATION_THRESHOLD=0.52
+VAD_SAMPLE_RATE=16000
 ```
-</details>
 
-<details>
-<summary><b>More thoughtful</b> — depth over speed</summary>
-
-```env
-MIN_ENDPOINTING_DELAY=0.35
-MAX_ENDPOINTING_DELAY=1.4
-GEMINI_THINKING_BUDGET=512
-GEMINI_MAX_OUTPUT_TOKENS=320
-SARVAM_MIN_BUFFER_SIZE=80
-SARVAM_MAX_CHUNK_LENGTH=220
-```
-</details>
-
-### The latency budget (and how to debug it)
-
-Perceived delay is a sum of stages — optimize the one that's actually slow:
-
-| Stage | What it is | Lever |
-|---|---|---|
-| **Endpointing** | Waiting after silence to decide the caller is done | `MIN/MAX_ENDPOINTING_DELAY`, Deepgram endpointing |
-| **STT** | Time to partial/final transcript | interim results + `no_delay` (on by default) |
-| **LLM** | Time to first token | `GEMINI_THINKING_BUDGET`, `GEMINI_MAX_OUTPUT_TOKENS` |
-| **TTS** | Time to first audio | `SARVAM_MIN_BUFFER_SIZE`, `SARVAM_MAX_CHUNK_LENGTH` |
-| **Network/media** | Routing audio over WebRTC/SIP | LiveKit server, ICE/TURN, host placement |
-
-The agent emits LiveKit metrics via `metrics.log_metrics` — **measure each stage before turning knobs.** Helpful references: [turn handling](https://docs.livekit.io/reference/agents/turn-handling-options/) · [adaptive interruption](https://docs.livekit.io/agents/build/turns/interruptions/) · [Deepgram STT](https://docs.livekit.io/agents/integrations/deepgram/) · [Gemini thinking](https://ai.google.dev/gemini-api/docs/thinking) · [Sarvam TTS](https://docs.livekit.io/agents/models/tts/sarvam/) · [background audio](https://docs.livekit.io/agents/build/audio/).
+For LiveKit Cloud deployments, set `INTERRUPTION_MODE=adaptive` after your Cloud inference credentials are working. The code also defaults enhanced noise cancellation to on for `*.livekit.cloud` URLs.
 
 ---
 
-## 📁 Project structure
+## Tests
+
+Agent behavior is tested with `pytest`.
+
+```bash
+uv run pytest
+uv run ruff format
+uv run ruff check
+```
+
+The suite covers prompt expectations, turn-handling defaults, VAD loading, email/phone normalization, DTMF capture, Redis lead saving, caller memory, and the branded HTML waitlist email.
+
+---
+
+## Project structure
 
 ```text
 src/
-├── agent.py                 # Worker entrypoint (keep this name — the Dockerfile uses it)
-├── app/
-│   ├── agent_session.py     # AnchorVoiceAgent + session wiring (STT/LLM/TTS/turn/DTMF)
-│   └── dtmf.py              # DTMF keypad collector for SIP callers
-├── inferences/             # Model builders: stt, llm, tts, turn detection, voice selection
-├── prompts/instructions.py  # Agent persona + capture/confirmation playbook
-├── tools/                   # Function tools: lead capture+email, DTMF, web search
-├── audio/background.py      # Background ambience + thinking sounds
-├── telemetry/costs.py       # Per-turn/per-call cost accounting
-└── core/                    # Env helpers + logging
-tests/                       # pytest suite (TDD for all behavior changes)
+  agent.py                 # Worker entrypoint
+  app/
+    agent_session.py       # AgentSession wiring, VAD, noise, memory, metrics
+    dtmf.py                # Keypad collector
+  prompts/
+    instructions.py        # Woice AI onboarding persona and waitlist flow
+  tools/
+    company.py             # Waitlist email, lead save, Redis caller memory
+    telephony.py           # DTMF tool
+  inferences/              # STT, LLM, TTS, turn detector builders
+  audio/                   # Background audio
+  telemetry/               # Cost accounting
+tests/
+  test_agent.py
+  test_company_leads.py
+  test_dtmf.py
+  test_tools.py
 ```
 
 ---
 
-## 📦 Deploying to production
+## Roadmap
 
-A production-ready `Dockerfile` is included. Deploy to [LiveKit Cloud](https://docs.livekit.io/deploy/agents/) or your own infrastructure.
+Woice today is the reliable voice layer and waitlist onboarding flow. The platform vision is bigger:
 
-### EC2 (GitHub Actions)
+- Multi-tenant dashboard to configure agents without code.
+- Live transcripts and lead inbox.
+- Conversation analytics: conversion, drop-off, latency, language mix.
+- Prompt and voice A/B testing.
+- CRM, calendar, support, messaging, and payment integrations.
+- Streaming RAG for company-specific answers.
+- Human escalation and callback workflows.
+- Usage-based billing from per-call telemetry.
+- 3D avatar experiences for web onboarding and demos.
 
-Run **Deploy Agent To EC2** from the **Actions** tab. It packages the app, ships it over SSH, builds the image, and starts the worker container. Required repository secrets:
-
-| Secret | Purpose |
-|---|---|
-| `EC2_HOST` | Public IP or DNS of the host |
-| `EC2_USER` | SSH user (e.g. `ec2-user`) |
-| `EC2_PRIVATE_KEY` | Contents of your `.pem` key |
-| `ENV_LOCAL` | Full contents of your production `.env.local` |
-
-The workflow installs `ENV_LOCAL` to `/etc/my-agent.env` and `/opt/my-agent/.env.local`, then builds and runs the agent container. It **does not touch your LiveKit server, SIP, ingress, or egress configuration** — those are managed independently.
-
-### EC2 (from your machine)
-
-```bash
-scripts/ec2/deploy_via_ssh.sh <ec2_host> <ec2_user> <pem_file> [app_dir] [env_file] [ssh_port]
-```
-
-### Self-hosting LiveKit
-
-You can self-host the LiveKit server instead of using LiveKit Cloud — see the [self-hosting guide](https://docs.livekit.io/transport/self-hosting/local/). Note that some Cloud-only features (adaptive interruption inference, Cloud noise cancellation) gracefully degrade or need alternatives when self-hosted.
+The runtime is the wedge. The platform is the product.
 
 ---
 
-## 🗺️ Roadmap
+## License
 
-Woice today is the **agent runtime** — the hard, reliable voice layer. The vision is the **platform around it**: turning conversations into a product surface you can sell.
-
-> The items below are planned/in-progress, not yet shipped.
-
-- **🧠 Cross-channel memory.** Phone-based returning-caller recognition **ships today** (recognized by number, resume partial intake, greet completed callers by name, 30-day Redis retention). Next: extend identity to web/app sessions and build richer per-caller history.
-- **📊 Multi-tenant dashboard.** A control plane to spin up and configure agents (persona, voice, language, tools) without touching code, watch **live transcripts**, and browse every captured lead.
-- **📈 Conversation analytics.** Conversion rates, drop-off points, capture success, latency percentiles, and language mix — per agent and per campaign.
-- **🔁 Prompt & voice A/B testing.** Compare personas, voices, and latency presets on live traffic and keep what converts.
-- **🔗 CRM & calendar integrations.** Push qualified leads straight into HubSpot/Salesforce/Sheets and book real calendar slots.
-- **💳 Usage-based billing.** Built on the existing cost telemetry, so every account is metered and monetizable.
-
-The thesis: the runtime is the wedge; **the dashboard, the data, and the integrations are the platform.**
-
----
-
-## 🤝 Working with coding agents
-
-This repo is built to be developed with coding agents (Claude Code, Cursor, Codex). See [AGENTS.md](AGENTS.md) for project conventions — most importantly, **test-driven development for any agent-behavior change**, and how to use the [LiveKit docs CLI/MCP](https://docs.livekit.io/reference/developer-tools/docs-mcp/) for up-to-date references.
-
-## 📄 License
-
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).

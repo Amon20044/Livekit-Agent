@@ -5,7 +5,7 @@ from livekit.agents import BuiltinAudioClip, llm
 from livekit.plugins import aws, elevenlabs, groq, sarvam
 
 from app import agent_session as agent_module
-from app.agent_session import AnchorVoiceAgent
+from app.agent_session import WoiceVoiceAgent, _build_vad, _noise_cancellation_enabled
 from audio.background import _build_background_audio_player
 from core.env import _env_bool, _env_float, _env_int, _plugin_model
 from inferences import llm as llm_module
@@ -41,18 +41,22 @@ from tools import (
 )
 
 
-def test_anchor_agent_is_dreamlaunch_intake_focused(monkeypatch) -> None:
+def test_woice_agent_is_waitlist_intake_focused(monkeypatch) -> None:
     monkeypatch.setenv("USE_EL", "false")
 
-    agent = AnchorVoiceAgent()
+    agent = WoiceVoiceAgent()
 
-    assert "DreamLaunch" in agent.instructions
+    assert "Woice AI" in agent.instructions
+    assert "https://woice.vercel.app" in agent.instructions
+    assert "waitlist" in agent.instructions.lower()
+    assert "voice workflows" in agent.instructions
     assert "Hindi by default" in agent.instructions
     assert (
         "Do not save anything to Redis while the call is active" in agent.instructions
     )
     assert (
-        "Should I send this brief and booking link to your email?" in agent.instructions
+        "Should I add you to the Woice AI waitlist and send this recap to your email?"
+        in agent.instructions
     )
     assert agent.tools == [
         send_confirmed_lead_email_and_save,
@@ -64,7 +68,7 @@ def test_anchor_agent_is_dreamlaunch_intake_focused(monkeypatch) -> None:
 def test_agent_instructions_cover_typed_input_and_readback(monkeypatch) -> None:
     monkeypatch.setenv("USE_EL", "false")
 
-    instructions = AnchorVoiceAgent().instructions
+    instructions = WoiceVoiceAgent().instructions
 
     assert "type their email" in instructions
     assert "keypad" in instructions
@@ -93,15 +97,15 @@ def test_company_name_is_configurable_via_env(monkeypatch) -> None:
     monkeypatch.setenv("COMPANY_NAME", "Acme Studio")
     monkeypatch.setenv("COMPANY_WEBSITE", "https://acme.example")
 
-    agent = AnchorVoiceAgent()
+    agent = WoiceVoiceAgent()
 
     assert "Acme Studio" in agent.instructions
-    assert "DreamLaunch Studio" not in agent.instructions
+    assert "Woice AI" not in agent.instructions
     assert "Acme Studio" in build_initial_greeting()
 
 
 @pytest.mark.asyncio
-async def test_anchor_agent_greets_and_asks_for_name_on_enter(monkeypatch) -> None:
+async def test_woice_agent_greets_and_asks_for_name_on_enter(monkeypatch) -> None:
     class FakeSession:
         def __init__(self) -> None:
             self.generated_replies = []
@@ -116,7 +120,7 @@ async def test_anchor_agent_greets_and_asks_for_name_on_enter(monkeypatch) -> No
         property(lambda _agent: fake_session),
     )
 
-    await AnchorVoiceAgent().on_enter()
+    await WoiceVoiceAgent().on_enter()
 
     assert fake_session.generated_replies == [
         {
@@ -124,15 +128,16 @@ async def test_anchor_agent_greets_and_asks_for_name_on_enter(monkeypatch) -> No
             "allow_interruptions": True,
         }
     ]
-    assert "DreamLaunch" in INITIAL_GREETING_INSTRUCTIONS
+    assert "Woice AI" in INITIAL_GREETING_INSTRUCTIONS
+    assert "waitlist" in INITIAL_GREETING_INSTRUCTIONS.lower()
 
 
-def test_anchor_agent_uses_english_language_defaults_with_elevenlabs(
+def test_woice_agent_uses_english_language_defaults_with_elevenlabs(
     monkeypatch,
 ) -> None:
     monkeypatch.setenv("USE_EL", "true")
 
-    agent = AnchorVoiceAgent()
+    agent = WoiceVoiceAgent()
 
     assert "English by default" in agent.instructions
     assert "Hindi by default" not in agent.instructions
@@ -207,6 +212,7 @@ def test_numeric_env_helpers_clamp_and_fallback(monkeypatch) -> None:
 
 
 def test_turn_handling_defaults_are_low_latency(monkeypatch) -> None:
+    monkeypatch.delenv("LIVEKIT_URL", raising=False)
     monkeypatch.delenv("MIN_ENDPOINTING_DELAY", raising=False)
     monkeypatch.delenv("MAX_ENDPOINTING_DELAY", raising=False)
     monkeypatch.delenv("INTERRUPTION_MODE", raising=False)
@@ -227,6 +233,16 @@ def test_turn_handling_defaults_are_low_latency(monkeypatch) -> None:
     assert options["interruption"]["min_words"] == 2
     assert options["preemptive_generation"]["enabled"] is True
     assert options["preemptive_generation"]["preemptive_tts"] is True
+    assert options["preemptive_generation"]["max_speech_duration"] == 2.5
+
+
+def test_turn_handling_defaults_to_adaptive_on_livekit_cloud(monkeypatch) -> None:
+    monkeypatch.setenv("LIVEKIT_URL", "wss://woice-prod.livekit.cloud")
+    monkeypatch.delenv("INTERRUPTION_MODE", raising=False)
+
+    options = _build_turn_handling_options(turn_detection=None)
+
+    assert options["interruption"]["mode"] == "adaptive"
 
 
 def test_turn_handling_min_words_is_configurable(monkeypatch) -> None:
@@ -255,6 +271,39 @@ def test_turn_handling_invalid_interruption_mode_falls_back_to_vad(monkeypatch) 
     options = _build_turn_handling_options(turn_detection=None)
 
     assert options["interruption"]["mode"] == "vad"
+
+
+def test_vad_load_uses_fast_production_defaults(monkeypatch) -> None:
+    captured = {}
+
+    class FakeVAD:
+        @staticmethod
+        def load(**kwargs):
+            captured.update(kwargs)
+            return "vad"
+
+    monkeypatch.setattr(agent_module.silero, "VAD", FakeVAD)
+    monkeypatch.delenv("VAD_MIN_SPEECH_DURATION", raising=False)
+    monkeypatch.delenv("VAD_MIN_SILENCE_DURATION", raising=False)
+    monkeypatch.delenv("VAD_PREFIX_PADDING_DURATION", raising=False)
+    monkeypatch.delenv("VAD_ACTIVATION_THRESHOLD", raising=False)
+
+    assert _build_vad() == "vad"
+    assert captured["min_speech_duration"] == 0.04
+    assert captured["min_silence_duration"] == 0.35
+    assert captured["prefix_padding_duration"] == 0.45
+    assert captured["activation_threshold"] == 0.52
+    assert captured["sample_rate"] == 16000
+    assert captured["force_cpu"] is True
+
+
+def test_noise_cancellation_defaults_to_livekit_cloud_only(monkeypatch) -> None:
+    monkeypatch.delenv("ENABLE_NOISE_CANCELLATION", raising=False)
+    monkeypatch.setenv("LIVEKIT_URL", "ws://localhost:7880")
+    assert _noise_cancellation_enabled() is False
+
+    monkeypatch.setenv("LIVEKIT_URL", "wss://woice-prod.livekit.cloud")
+    assert _noise_cancellation_enabled() is True
 
 
 def test_turn_handling_defaults_to_multilingual_detector(monkeypatch) -> None:

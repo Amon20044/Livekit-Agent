@@ -3,8 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-# Imported under its historical name; the Redis namespace is still "dreamlaunch:".
-from tools import company as dreamlaunch
+from tools import company as woice
 
 
 class FakeRedis:
@@ -28,7 +27,7 @@ class FakeRedis:
     ],
 )
 def test_normalize_spoken_email(spoken, expected) -> None:
-    assert dreamlaunch.normalize_spoken_email(spoken) == expected
+    assert woice.normalize_spoken_email(spoken) == expected
 
 
 @pytest.mark.parametrize(
@@ -44,7 +43,7 @@ def test_normalize_spoken_email(spoken, expected) -> None:
     ],
 )
 def test_is_valid_email(email, valid) -> None:
-    assert dreamlaunch.is_valid_email(email) is valid
+    assert woice.is_valid_email(email) is valid
 
 
 @pytest.mark.parametrize(
@@ -57,7 +56,7 @@ def test_is_valid_email(email, valid) -> None:
     ],
 )
 def test_normalize_phone(raw, expected) -> None:
-    assert dreamlaunch.normalize_phone(raw) == expected
+    assert woice.normalize_phone(raw) == expected
 
 
 @pytest.mark.parametrize(
@@ -70,19 +69,19 @@ def test_normalize_phone(raw, expected) -> None:
     ],
 )
 def test_is_valid_phone(phone, valid) -> None:
-    assert dreamlaunch.is_valid_phone(phone) is valid
+    assert woice.is_valid_phone(phone) is valid
 
 
 @pytest.mark.asyncio
 async def test_send_confirmed_lead_rejects_malformed_email(monkeypatch) -> None:
     sent = []
     monkeypatch.setattr(
-        dreamlaunch,
-        "send_dreamlaunch_recap_email",
+        woice,
+        "send_woice_waitlist_email",
         lambda lead: sent.append(lead),
     )
 
-    result = await dreamlaunch.send_confirmed_lead_email_and_save._func(
+    result = await woice.send_confirmed_lead_email_and_save._func(
         None,
         name="Amon",
         email="amon at gmail",
@@ -123,21 +122,21 @@ async def test_send_confirmed_lead_normalizes_spoken_email(monkeypatch) -> None:
             self.session = FakeSession()
 
     monkeypatch.setattr(
-        dreamlaunch,
-        "send_dreamlaunch_recap_email",
+        woice,
+        "send_woice_waitlist_email",
         lambda lead: events.append(("email", lead["email"])),
     )
     monkeypatch.setattr(
-        dreamlaunch, "save_completed_lead_to_redis", lambda **kw: {"lead_id": "lead_x"}
+        woice, "save_completed_lead_to_redis", lambda **kw: {"lead_id": "lead_x"}
     )
-    monkeypatch.setattr(dreamlaunch, "save_caller_memory", lambda **kw: None)
+    monkeypatch.setattr(woice, "save_caller_memory", lambda **kw: None)
 
     async def fake_end(context):
         events.append("end")
 
-    monkeypatch.setattr(dreamlaunch, "_end_room_after_playout", fake_end)
+    monkeypatch.setattr(woice, "_end_room_after_playout", fake_end)
 
-    result = await dreamlaunch.send_confirmed_lead_email_and_save._func(
+    result = await woice.send_confirmed_lead_email_and_save._func(
         FakeContext(),
         name="Amon",
         email="amon sharma 2000 at gmail dot com",
@@ -152,7 +151,7 @@ async def test_send_confirmed_lead_normalizes_spoken_email(monkeypatch) -> None:
 
 def test_save_completed_lead_requires_confirmed_email() -> None:
     with pytest.raises(ValueError, match="Email was not confirmed"):
-        dreamlaunch.save_completed_lead_to_redis(
+        woice.save_completed_lead_to_redis(
             room_name="woice-call-1",
             caller_number="+918200962735",
             name="Amon",
@@ -166,7 +165,7 @@ def test_save_completed_lead_requires_confirmed_email() -> None:
 
 def test_save_completed_lead_requires_sent_email() -> None:
     with pytest.raises(ValueError, match="Email was not sent"):
-        dreamlaunch.save_completed_lead_to_redis(
+        woice.save_completed_lead_to_redis(
             room_name="woice-call-1",
             caller_number="+918200962735",
             name="Amon",
@@ -181,13 +180,13 @@ def test_save_completed_lead_requires_sent_email() -> None:
 def test_save_completed_lead_stores_minimal_completed_schema(monkeypatch) -> None:
     fake_redis = FakeRedis()
     monkeypatch.setenv("LEAD_TTL_SECONDS", "86400")
-    monkeypatch.setattr(dreamlaunch, "_redis_client", lambda: fake_redis)
+    monkeypatch.setattr(woice, "_redis_client", lambda: fake_redis)
     monkeypatch.setattr(
-        dreamlaunch.uuid, "uuid4", lambda: SimpleNamespace(hex="abc123def4567890")
+        woice.uuid, "uuid4", lambda: SimpleNamespace(hex="abc123def4567890")
     )
-    monkeypatch.setattr(dreamlaunch.time, "time", lambda: 1710000000)
+    monkeypatch.setattr(woice.time, "time", lambda: 1710000000)
 
-    lead = dreamlaunch.save_completed_lead_to_redis(
+    lead = woice.save_completed_lead_to_redis(
         room_name="woice-call-1",
         caller_number="+918200962735",
         name="Amon",
@@ -211,18 +210,18 @@ def test_save_completed_lead_stores_minimal_completed_schema(monkeypatch) -> Non
         "status": "completed",
         "created_at": 1710000000,
     }
-    assert fake_redis.calls[0]["key"] == "dreamlaunch:lead:lead_abc123def456"
+    assert fake_redis.calls[0]["key"] == "woice:lead:lead_abc123def456"
     assert json.loads(fake_redis.calls[0]["value"]) == lead
     assert fake_redis.calls[0]["ex"] == 86400
     assert fake_redis.calls[1] == {
-        "key": "dreamlaunch:room:woice-call-1:lead",
+        "key": "woice:room:woice-call-1:lead",
         "value": "lead_abc123def456",
         "ex": 86400,
     }
 
 
 def test_smtp_config_prefers_google_app_credentials(monkeypatch) -> None:
-    monkeypatch.setenv("GOOGLE_APP_EMAIL", "hello@dreamlaunch.studio")
+    monkeypatch.setenv("GOOGLE_APP_EMAIL", "hello@woice.ai")
     monkeypatch.setenv("GOOGLE_APP_PASS", "app-password")
     monkeypatch.delenv("SMTP_HOST", raising=False)
     monkeypatch.delenv("SMTP_PORT", raising=False)
@@ -230,21 +229,103 @@ def test_smtp_config_prefers_google_app_credentials(monkeypatch) -> None:
     monkeypatch.delenv("SMTP_PASSWORD", raising=False)
     monkeypatch.delenv("SMTP_FROM", raising=False)
 
-    assert dreamlaunch._smtp_config() == {
+    assert woice._smtp_config() == {
         "host": "smtp.gmail.com",
         "port": 587,
-        "username": "hello@dreamlaunch.studio",
+        "username": "hello@woice.ai",
         "password": "app-password",
-        "sender": "hello@dreamlaunch.studio",
-        "reply_to": "hello@dreamlaunch.studio",
+        "sender": "hello@woice.ai",
+        "reply_to": "hello@woice.ai",
     }
+
+
+def test_waitlist_email_html_is_branded_and_escapes_user_text(monkeypatch) -> None:
+    monkeypatch.setenv("COMPANY_NAME", "Woice AI")
+    monkeypatch.setenv("COMPANY_WEBSITE", "https://woice.vercel.app")
+
+    html = woice._email_html_body(
+        {
+            "name": "Amon <script>",
+            "email": "amon@example.com",
+            "company": "Arisyn",
+            "reason_for_meet": "Book calls <fast>",
+        }
+    )
+
+    assert "Welcome to Woice AI" in html
+    assert "You are on the Woice AI waitlist" in html
+    assert "Voice that does not miss a thing" in html
+    assert "https://woice.vercel.app" in html
+    assert "Amon &lt;script&gt;" in html
+    assert "Book calls &lt;fast&gt;" in html
+    assert "Amon <script>" not in html
+
+
+def test_send_woice_waitlist_email_builds_multipart_message(monkeypatch) -> None:
+    sent = []
+
+    class FakeSMTP:
+        def __init__(self, host, port, timeout):
+            self.host = host
+            self.port = port
+            self.timeout = timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return None
+
+        def starttls(self, context):
+            return None
+
+        def login(self, username, password):
+            return None
+
+        def send_message(self, message):
+            sent.append(message)
+
+    monkeypatch.setattr(
+        woice,
+        "_smtp_config",
+        lambda: {
+            "host": "smtp.example.com",
+            "port": 587,
+            "username": "hello@woice.ai",
+            "password": "secret",
+            "sender": "hello@woice.ai",
+            "reply_to": "founders@woice.ai",
+        },
+    )
+    monkeypatch.setattr(woice.smtplib, "SMTP", FakeSMTP)
+
+    woice.send_woice_waitlist_email(
+        {
+            "name": "Amon",
+            "email": "amon@example.com",
+            "company": "Arisyn",
+            "reason_for_meet": "Qualify inbound leads and book demos",
+        }
+    )
+
+    assert len(sent) == 1
+    message = sent[0]
+    assert message["Subject"] == "Your Woice AI waitlist recap"
+    assert message["Reply-To"] == "founders@woice.ai"
+    assert message.is_multipart()
+    assert message.get_body(preferencelist=("plain",)).get_content_type() == (
+        "text/plain"
+    )
+    html = message.get_body(preferencelist=("html",)).get_content()
+    assert "Qualify inbound leads and book demos" in html
+    assert "What happens next" in html
 
 
 @pytest.mark.asyncio
 async def test_send_confirmed_lead_email_and_save_does_not_run_without_permission() -> (
     None
 ):
-    result = await dreamlaunch.send_confirmed_lead_email_and_save._func(
+    result = await woice.send_confirmed_lead_email_and_save._func(
         None,
         name="Amon",
         email="amon@example.com",
@@ -295,14 +376,14 @@ async def test_send_confirmed_lead_email_and_save_sends_then_saves(monkeypatch) 
         events.append(("end", context))
 
     caller_saves = []
-    monkeypatch.setattr(dreamlaunch, "send_dreamlaunch_recap_email", fake_send_email)
-    monkeypatch.setattr(dreamlaunch, "save_completed_lead_to_redis", fake_save)
-    monkeypatch.setattr(dreamlaunch, "_end_room_after_playout", fake_end_call)
+    monkeypatch.setattr(woice, "send_woice_waitlist_email", fake_send_email)
+    monkeypatch.setattr(woice, "save_completed_lead_to_redis", fake_save)
+    monkeypatch.setattr(woice, "_end_room_after_playout", fake_end_call)
     monkeypatch.setattr(
-        dreamlaunch, "save_caller_memory", lambda **kwargs: caller_saves.append(kwargs)
+        woice, "save_caller_memory", lambda **kwargs: caller_saves.append(kwargs)
     )
 
-    result = await dreamlaunch.send_confirmed_lead_email_and_save._func(
+    result = await woice.send_confirmed_lead_email_and_save._func(
         FakeContext(),
         name="Amon",
         email="amon@example.com",
@@ -348,7 +429,7 @@ def test_caller_number_from_room_reads_sip_identity() -> None:
         def __init__(self) -> None:
             self.remote_participants = {"caller": FakeParticipant()}
 
-    assert dreamlaunch.caller_number_from_room(FakeRoom()) == "+918200962735"
+    assert woice.caller_number_from_room(FakeRoom()) == "+918200962735"
 
 
 def test_caller_number_from_room_handles_no_participants() -> None:
@@ -356,12 +437,12 @@ def test_caller_number_from_room_handles_no_participants() -> None:
         def __init__(self) -> None:
             self.remote_participants = {}
 
-    assert dreamlaunch.caller_number_from_room(FakeRoom()) is None
+    assert woice.caller_number_from_room(FakeRoom()) is None
 
 
 def test_lookup_caller_returns_none_without_phone() -> None:
-    assert dreamlaunch.lookup_caller(None) is None
-    assert dreamlaunch.lookup_caller("") is None
+    assert woice.lookup_caller(None) is None
+    assert woice.lookup_caller("") is None
 
 
 def test_save_and_lookup_caller_roundtrip(monkeypatch) -> None:
@@ -374,29 +455,29 @@ def test_save_and_lookup_caller_roundtrip(monkeypatch) -> None:
         def get(self, key):
             return store.get(key)
 
-    monkeypatch.setattr(dreamlaunch, "_redis_client", lambda: FakeKV())
+    monkeypatch.setattr(woice, "_redis_client", lambda: FakeKV())
 
-    record = dreamlaunch.save_caller_memory(
+    record = woice.save_caller_memory(
         phone="+918200962735", status="partial", name="Amon"
     )
     assert record["status"] == "partial"
     assert record["name"] == "Amon"
 
-    got = dreamlaunch.lookup_caller("+918200962735")
+    got = woice.lookup_caller("+918200962735")
     assert got["phone"] == "+918200962735"
     assert got["name"] == "Amon"
 
 
 def test_save_caller_memory_skips_without_phone() -> None:
-    assert dreamlaunch.save_caller_memory(phone=None, status="partial") is None
+    assert woice.save_caller_memory(phone=None, status="partial") is None
 
 
 def test_lookup_caller_survives_redis_failure(monkeypatch) -> None:
     def boom():
         raise RuntimeError("redis down")
 
-    monkeypatch.setattr(dreamlaunch, "_redis_client", boom)
-    assert dreamlaunch.lookup_caller("+918200962735") is None
+    monkeypatch.setattr(woice, "_redis_client", boom)
+    assert woice.lookup_caller("+918200962735") is None
 
 
 @pytest.mark.asyncio
@@ -404,8 +485,8 @@ async def test_note_lead_progress_accumulates_in_userdata() -> None:
     userdata = {"lead_progress": {}}
     context = SimpleNamespace(session=SimpleNamespace(userdata=userdata))
 
-    await dreamlaunch.note_lead_progress._func(context, name="Amon")
-    await dreamlaunch.note_lead_progress._func(
+    await woice.note_lead_progress._func(context, name="Amon")
+    await woice.note_lead_progress._func(
         context, email="amon at gmail dot com", company="Arisyn"
     )
 

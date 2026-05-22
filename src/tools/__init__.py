@@ -25,7 +25,7 @@ from tools.company import (
     send_confirmed_lead_email_and_save as send_confirmed_lead_email_and_save,
 )
 from tools.company import (
-    send_dreamlaunch_recap_email as send_dreamlaunch_recap_email,
+    send_woice_waitlist_email as send_woice_waitlist_email,
 )
 from tools.telephony import (
     get_dialed_phone_number as get_dialed_phone_number,

@@ -10,12 +10,11 @@ _DEFAULT_TURN_DETECTION = object()
 
 
 def _interruption_mode() -> str:
-    # Default to "vad". The "adaptive" barge-in model is a LiveKit Cloud feature:
-    # on a self-hosted server it returns 401 from the Cloud gateway, retries
-    # noisily, and falls back to VAD anyway. Set INTERRUPTION_MODE=adaptive only
-    # when the agent runs on LiveKit Cloud. On VAD we filter backchannel via
-    # MIN_INTERRUPTION_WORDS instead (see below).
-    mode = os.getenv("INTERRUPTION_MODE", "vad").strip().lower()
+    # LiveKit recommends adaptive interruption handling when it is available.
+    # It is a LiveKit Cloud feature, so local/self-hosted defaults stay on VAD
+    # and filter backchannel with MIN_INTERRUPTION_WORDS instead.
+    default_mode = "adaptive" if ".livekit.cloud" in os.getenv("LIVEKIT_URL", "") else "vad"
+    mode = os.getenv("INTERRUPTION_MODE", default_mode).strip().lower()
     if mode in {"adaptive", "vad"}:
         return mode
     return "vad"
@@ -62,6 +61,12 @@ def _build_turn_handling_options(
         preemptive_generation={
             "enabled": _env_bool("PREEMPTIVE_GENERATION", True),
             "preemptive_tts": _env_bool("PREEMPTIVE_TTS", True),
+            "max_speech_duration": _env_float(
+                "PREEMPTIVE_MAX_SPEECH_DURATION",
+                2.5,
+                min_value=0.5,
+                max_value=15.0,
+            ),
             "max_retries": _env_int(
                 "PREEMPTIVE_MAX_RETRIES", 1, min_value=0, max_value=5
             ),

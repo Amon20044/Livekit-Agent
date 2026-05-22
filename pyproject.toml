@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "News-Anchor-Agent"
+name = "woice-ai-agent"
 version = "1.0.0"
-description = "News voice AI assistant built with LiveKit Agents for Python"
+description = "Woice AI waitlist voice agent built with LiveKit Agents for Python"
 requires-python = ">=3.10, <3.15"
 
 dependencies = [

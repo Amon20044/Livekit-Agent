@@ -10,12 +10,12 @@ load_dotenv(ENV_FILE_PATH)
 LIVEKIT_URL = os.getenv("LIVEKIT_URL", "ws://localhost:7880")
 LIVEKIT_API_KEY = os.getenv("LIVEKIT_API_KEY")
 LIVEKIT_API_SECRET = os.getenv("LIVEKIT_API_SECRET")
-AGENT_NAME = os.getenv("LIVEKIT_AGENT_NAME", "my-agent")
+AGENT_NAME = os.getenv("LIVEKIT_AGENT_NAME", "woice-ai-agent")
 
-# Brand identity. Configurable so one codebase can serve many studios; defaults
-# keep the bundled DreamLaunch Studio reference agent working out of the box.
-COMPANY_NAME = os.getenv("COMPANY_NAME", "DreamLaunch Studio")
-COMPANY_WEBSITE = os.getenv("COMPANY_WEBSITE", "https://dreamlaunch.studio")
+# Brand identity. Configurable so one codebase can serve many deployments; defaults
+# keep the bundled Woice AI waitlist concierge working out of the box.
+COMPANY_NAME = os.getenv("COMPANY_NAME", "Woice AI")
+COMPANY_WEBSITE = os.getenv("COMPANY_WEBSITE", "https://woice.vercel.app")
 
 # Provider API keys
 deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")

@@ -7,6 +7,7 @@ import ssl
 import time
 import uuid
 from email.message import EmailMessage
+from html import escape
 from typing import Any
 
 from livekit.agents import RunContext, function_tool, get_job_context
@@ -133,12 +134,12 @@ def save_completed_lead_to_redis(
     ttl_seconds = _lead_ttl_seconds()
     redis = _redis_client()
     redis.set(
-        f"dreamlaunch:lead:{lead_id}",
+        f"woice:lead:{lead_id}",
         json.dumps(lead),
         ex=ttl_seconds,
     )
     redis.set(
-        f"dreamlaunch:room:{room_name}:lead",
+        f"woice:room:{room_name}:lead",
         lead_id,
         ex=ttl_seconds,
     )
@@ -159,7 +160,7 @@ def _caller_memory_ttl_seconds() -> int:
 
 
 def _caller_key(phone: str) -> str:
-    return f"dreamlaunch:caller:{phone}"
+    return f"woice:caller:{phone}"
 
 
 def lookup_caller(phone: str | None) -> dict[str, Any] | None:
@@ -227,7 +228,7 @@ def save_caller_memory(
 def _required_env(name: str) -> str:
     value = _clean_env(name)
     if not value:
-        raise RuntimeError(f"{name} is required to send DreamLaunch recap emails")
+        raise RuntimeError(f"{name} is required to send Woice AI waitlist emails")
     return value
 
 
@@ -240,7 +241,7 @@ def _smtp_config() -> dict[str, str | int]:
     smtp_username = google_app_email or _required_env("SMTP_USERNAME")
     smtp_password = google_app_pass or _required_env("SMTP_PASSWORD")
     sender = _clean_env("SMTP_FROM") or smtp_username
-    reply_to = _clean_env("DREAMLAUNCH_REPLY_TO") or sender
+    reply_to = _clean_env("WOICE_REPLY_TO") or sender
 
     return {
         "host": smtp_host,
@@ -253,46 +254,137 @@ def _smtp_config() -> dict[str, str | int]:
 
 
 def company_name() -> str:
-    return _clean_env("COMPANY_NAME") or "DreamLaunch Studio"
+    return _clean_env("COMPANY_NAME") or "Woice AI"
 
 
 def company_website() -> str:
-    return _clean_env("COMPANY_WEBSITE") or "https://dreamlaunch.studio"
+    return _clean_env("COMPANY_WEBSITE") or "https://woice.vercel.app"
 
 
 def _email_body(lead: dict[str, str | None]) -> str:
     company = company_name()
     website = company_website()
-    booking_url = _clean_env("DREAMLAUNCH_BOOKING_URL") or website
+    waitlist_url = _clean_env("WOICE_WAITLIST_URL") or website
     company_line = f"Company: {lead.get('company') or 'Not provided'}"
     return f"""Hi {lead["name"]},
 
-Thanks for calling {company}. Here is the brief I captured:
+Thanks for joining the {company} waitlist. Here is the voice workflow brief I captured:
 
 Name: {lead["name"]}
 Email: {lead["email"]}
 {company_line}
-Reason for meeting: {lead["reason_for_meet"]}
+Workflow to automate: {lead["reason_for_meet"]}
 
 Next step:
-Book a strategy call here: {booking_url}
+We will review your use case and follow up with the right onboarding path.
+Waitlist page: {waitlist_url}
 
-We will use this brief to prepare the conversation and keep the first call focused.
+{company} connects phone calls to business tools so every conversation can qualify, book, update, remind, escalate, and close the loop automatically.
 
 {company}
 {website}
 """
 
 
-def send_dreamlaunch_recap_email(lead: dict[str, str | None]) -> None:
+def _email_html_body(lead: dict[str, str | None]) -> str:
+    company = escape(company_name())
+    website = escape(company_website())
+    waitlist_url = escape(
+        _clean_env("WOICE_WAITLIST_URL") or company_website()
+    )
+    name = escape(str(lead["name"]))
+    email = escape(str(lead["email"]))
+    caller_company = escape(str(lead.get("company") or "Not provided"))
+    workflow = escape(str(lead["reason_for_meet"]))
+
+    return f"""<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{company} waitlist recap</title>
+  </head>
+  <body style="margin:0; padding:0; background:#07090d; color:#f6f7fb; font-family:Inter, Arial, sans-serif;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#07090d; padding:32px 12px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px; border:1px solid #202633; border-radius:24px; overflow:hidden; background:#0d1118;">
+            <tr>
+              <td style="padding:34px 30px 26px; background:linear-gradient(135deg,#101826 0%,#0d1118 48%,#11251f 100%);">
+                <div style="font-size:13px; letter-spacing:0.14em; text-transform:uppercase; color:#8be7c2; font-weight:700;">Welcome to {company}</div>
+                <h1 style="margin:18px 0 10px; font-size:34px; line-height:1.08; color:#ffffff; font-weight:800;">You are on the {company} waitlist.</h1>
+                <p style="margin:0; max-width:520px; color:#c9d2df; font-size:16px; line-height:1.65;">Voice that does not miss a thing, and actually finishes the conversation. We captured your workflow brief and will use it to shape the right onboarding path for you.</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:26px 30px 6px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                  <tr>
+                    <td style="padding:16px 0; border-bottom:1px solid #202633;">
+                      <div style="color:#8a96a8; font-size:12px; text-transform:uppercase; letter-spacing:0.12em;">Name</div>
+                      <div style="margin-top:6px; color:#ffffff; font-size:17px; font-weight:700;">{name}</div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding:16px 0; border-bottom:1px solid #202633;">
+                      <div style="color:#8a96a8; font-size:12px; text-transform:uppercase; letter-spacing:0.12em;">Email</div>
+                      <div style="margin-top:6px; color:#ffffff; font-size:17px; font-weight:700;">{email}</div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding:16px 0; border-bottom:1px solid #202633;">
+                      <div style="color:#8a96a8; font-size:12px; text-transform:uppercase; letter-spacing:0.12em;">Company</div>
+                      <div style="margin-top:6px; color:#ffffff; font-size:17px; font-weight:700;">{caller_company}</div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding:16px 0;">
+                      <div style="color:#8a96a8; font-size:12px; text-transform:uppercase; letter-spacing:0.12em;">Workflow to automate</div>
+                      <div style="margin-top:8px; color:#eaf0f7; font-size:16px; line-height:1.65;">{workflow}</div>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:18px 30px 30px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#111821; border:1px solid #263244; border-radius:18px;">
+                  <tr>
+                    <td style="padding:22px;">
+                      <div style="color:#8be7c2; font-size:14px; font-weight:800;">What happens next</div>
+                      <p style="margin:10px 0 0; color:#c9d2df; font-size:15px; line-height:1.65;">We will review your use case for call volume, integrations, language needs, and the outcome your agent should complete. When onboarding opens, you will hear from us with the best setup path.</p>
+                    </td>
+                  </tr>
+                </table>
+                <div style="padding-top:24px;">
+                  <a href="{waitlist_url}" style="display:inline-block; background:#8be7c2; color:#07100d; text-decoration:none; font-weight:800; font-size:15px; padding:14px 20px; border-radius:999px;">Visit Woice</a>
+                  <span style="display:inline-block; margin-left:12px; color:#8a96a8; font-size:14px;">{website}</span>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:22px 30px; background:#090c12; border-top:1px solid #202633;">
+                <p style="margin:0; color:#8a96a8; font-size:13px; line-height:1.7;">{company} turns phone calls into completed workflows across CRM, calendar, knowledge base, payments, support, messaging, and internal tools.</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>"""
+
+
+def send_woice_waitlist_email(lead: dict[str, str | None]) -> None:
     smtp_config = _smtp_config()
 
     message = EmailMessage()
-    message["Subject"] = f"Your {company_name()} brief and booking link"
+    message["Subject"] = f"Your {company_name()} waitlist recap"
     message["From"] = str(smtp_config["sender"])
     message["To"] = str(lead["email"])
     message["Reply-To"] = str(smtp_config["reply_to"])
     message.set_content(_email_body(lead))
+    message.add_alternative(_email_html_body(lead), subtype="html")
 
     context = ssl.create_default_context()
     with smtplib.SMTP(
@@ -384,10 +476,10 @@ async def send_confirmed_lead_email_and_save(
     reason_for_meet: str,
     email_confirmed: bool,
 ) -> str:
-    """Send the DreamLaunch recap email, save the completed lead, and end the call.
+    """Send the Woice AI waitlist email, save the completed lead, and end the call.
 
-    Only call this after the caller has clearly confirmed that the brief and
-    booking link should be sent to their email address.
+    Only call this after the caller has clearly confirmed that the waitlist recap
+    should be sent to their email address.
     """
     if not email_confirmed:
         return "Do not send email. Caller has not confirmed permission."
@@ -409,7 +501,7 @@ async def send_confirmed_lead_email_and_save(
         "reason_for_meet": reason_for_meet,
     }
 
-    send_dreamlaunch_recap_email(lead_for_email)
+    send_woice_waitlist_email(lead_for_email)
     saved = save_completed_lead_to_redis(
         room_name=room_name,
         caller_number=caller_number,
@@ -437,7 +529,7 @@ async def send_confirmed_lead_email_and_save(
         userdata["lead_completed"] = True
 
     speech = context.session.say(
-        "Done. I have sent the recap and booking link to your email. "
+        "Done. I have added you to the waitlist and sent the recap to your email. "
         f"Thanks for calling {company_name()}.",
         allow_interruptions=False,
         add_to_chat_ctx=True,
