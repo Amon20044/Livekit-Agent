@@ -95,6 +95,27 @@ def _required_env(name: str) -> str:
     return value
 
 
+def _smtp_config() -> dict[str, str | int]:
+    google_app_email = _clean_env("GOOGLE_APP_EMAIL")
+    google_app_pass = _clean_env("GOOGLE_APP_PASS")
+
+    smtp_host = _clean_env("SMTP_HOST") or "smtp.gmail.com"
+    smtp_port = int(_clean_env("SMTP_PORT") or "587")
+    smtp_username = google_app_email or _required_env("SMTP_USERNAME")
+    smtp_password = google_app_pass or _required_env("SMTP_PASSWORD")
+    sender = _clean_env("SMTP_FROM") or smtp_username
+    reply_to = _clean_env("DREAMLAUNCH_REPLY_TO") or sender
+
+    return {
+        "host": smtp_host,
+        "port": smtp_port,
+        "username": smtp_username,
+        "password": smtp_password,
+        "sender": sender,
+        "reply_to": reply_to,
+    }
+
+
 def _email_body(lead: dict[str, str | None]) -> str:
     company_line = f"Company: {lead.get('company') or 'Not provided'}"
     return f"""Hi {lead["name"]},
@@ -117,24 +138,23 @@ https://dreamlaunch.studio
 
 
 def send_dreamlaunch_recap_email(lead: dict[str, str | None]) -> None:
-    smtp_host = _required_env("SMTP_HOST")
-    smtp_port = int(_clean_env("SMTP_PORT") or "587")
-    smtp_username = _required_env("SMTP_USERNAME")
-    smtp_password = _required_env("SMTP_PASSWORD")
-    sender = _clean_env("SMTP_FROM") or smtp_username
-    reply_to = _clean_env("DREAMLAUNCH_REPLY_TO") or sender
+    smtp_config = _smtp_config()
 
     message = EmailMessage()
     message["Subject"] = "Your DreamLaunch Studio brief and booking link"
-    message["From"] = sender
+    message["From"] = str(smtp_config["sender"])
     message["To"] = str(lead["email"])
-    message["Reply-To"] = reply_to
+    message["Reply-To"] = str(smtp_config["reply_to"])
     message.set_content(_email_body(lead))
 
     context = ssl.create_default_context()
-    with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as smtp:
+    with smtplib.SMTP(
+        str(smtp_config["host"]),
+        int(smtp_config["port"]),
+        timeout=15,
+    ) as smtp:
         smtp.starttls(context=context)
-        smtp.login(smtp_username, smtp_password)
+        smtp.login(str(smtp_config["username"]), str(smtp_config["password"]))
         smtp.send_message(message)
 
 

@@ -86,6 +86,25 @@ def test_save_completed_lead_stores_minimal_completed_schema(monkeypatch) -> Non
     }
 
 
+def test_smtp_config_prefers_google_app_credentials(monkeypatch) -> None:
+    monkeypatch.setenv("GOOGLE_APP_EMAIL", "hello@dreamlaunch.studio")
+    monkeypatch.setenv("GOOGLE_APP_PASS", "app-password")
+    monkeypatch.delenv("SMTP_HOST", raising=False)
+    monkeypatch.delenv("SMTP_PORT", raising=False)
+    monkeypatch.delenv("SMTP_USERNAME", raising=False)
+    monkeypatch.delenv("SMTP_PASSWORD", raising=False)
+    monkeypatch.delenv("SMTP_FROM", raising=False)
+
+    assert dreamlaunch._smtp_config() == {
+        "host": "smtp.gmail.com",
+        "port": 587,
+        "username": "hello@dreamlaunch.studio",
+        "password": "app-password",
+        "sender": "hello@dreamlaunch.studio",
+        "reply_to": "hello@dreamlaunch.studio",
+    }
+
+
 @pytest.mark.asyncio
 async def test_send_confirmed_lead_email_and_save_does_not_run_without_permission() -> (
     None
