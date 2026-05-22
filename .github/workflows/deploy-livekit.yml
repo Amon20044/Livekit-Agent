@@ -92,6 +92,7 @@ jobs:
           # Upload
           $SCP /tmp/livekit-configs.tar.gz "$REMOTE:/tmp/livekit-configs.tar.gz"
           $SCP /tmp/my-agent.env.local "$REMOTE:/tmp/my-agent.env.local"
+          $SCP scripts/ec2/export_env_keys.py "$REMOTE:/tmp/export_env_keys.py"
 
           # Apply configs and restart
           $SSH "$REMOTE" "
@@ -129,9 +130,8 @@ jobs:
               sudo chown '${{ secrets.EC2_USER }}':'${{ secrets.EC2_USER }}' /opt/my-agent/.env.local
             fi
 
-            set -a
-            . /etc/my-agent.env
-            set +a
+            eval "\$(python3 /tmp/export_env_keys.py /etc/my-agent.env LIVEKIT_API_KEY LIVEKIT_API_SECRET LIVEKIT_PUBLIC_URL)"
+            rm -f /tmp/export_env_keys.py
             : \"\${LIVEKIT_API_KEY:?LIVEKIT_API_KEY missing from ENV_LOCAL}\"
             : \"\${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET missing from ENV_LOCAL}\"
             LIVEKIT_PUBLIC_URL=\"\${LIVEKIT_PUBLIC_URL:-wss://livekit.amonsharma.com}\"

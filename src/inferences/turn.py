@@ -32,7 +32,9 @@ def _build_turn_handling_options(
             "max_delay": _env_float(
                 "MAX_ENDPOINTING_DELAY", 0.9, min_value=0.1, max_value=4.0
             ),
-            "alpha": _env_float("ENDPOINTING_ALPHA", 0.55, min_value=0.0, max_value=1.0),
+            "alpha": _env_float(
+                "ENDPOINTING_ALPHA", 0.55, min_value=0.0, max_value=1.0
+            ),
         },
         interruption={
             "enabled": _env_bool("INTERRUPTIONS_ENABLED", True),
@@ -40,7 +42,9 @@ def _build_turn_handling_options(
             "min_duration": _env_float(
                 "MIN_INTERRUPTION_DURATION", 0.5, min_value=0.05, max_value=3.0
             ),
-            "min_words": _env_int("MIN_INTERRUPTION_WORDS", 0, min_value=0, max_value=10),
+            "min_words": _env_int(
+                "MIN_INTERRUPTION_WORDS", 0, min_value=0, max_value=10
+            ),
             "discard_audio_if_uninterruptible": True,
             "false_interruption_timeout": _env_float(
                 "FALSE_INTERRUPTION_TIMEOUT", 2.0, min_value=0.0, max_value=10.0

@@ -90,10 +90,9 @@ if [[ -d "$APP_DIR/.git" ]]; then
 fi
 
 if [[ -f "$ENV_FILE" ]]; then
-  # shellcheck source=/dev/null
-  set -a
-  . "$ENV_FILE"
-  set +a
+  # Export dotenv-style variables without sourcing raw shell. This keeps values
+  # with spaces, such as Gmail app passwords, from being treated as commands.
+  eval "$(python3 "$APP_DIR/scripts/ec2/export_env_keys.py" "$ENV_FILE")"
 else
   echo "Warning: env file not found at $ENV_FILE"
 fi
