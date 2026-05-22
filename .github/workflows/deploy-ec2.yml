@@ -141,7 +141,7 @@ jobs:
             sudo chown '${{ secrets.EC2_USER }}':'${{ secrets.EC2_USER }}' '${{ env.APP_ENV_FILE }}'
 
             # Keep LiveKit ingress/egress configs synced to the same keypair.
-            eval "\$(python3 '${{ env.APP_DIR }}/scripts/ec2/export_env_keys.py' '${{ env.ENV_FILE }}' LIVEKIT_API_KEY LIVEKIT_API_SECRET LIVEKIT_PUBLIC_URL)"
+            eval \"\$(python3 '${{ env.APP_DIR }}/scripts/ec2/export_env_keys.py' '${{ env.ENV_FILE }}' LIVEKIT_API_KEY LIVEKIT_API_SECRET LIVEKIT_PUBLIC_URL)\"
             : \"\${LIVEKIT_API_KEY:?LIVEKIT_API_KEY missing from ENV_LOCAL}\"
             : \"\${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET missing from ENV_LOCAL}\"
             LIVEKIT_PUBLIC_URL=\"\${LIVEKIT_PUBLIC_URL:-wss://livekit.amonsharma.com}\"

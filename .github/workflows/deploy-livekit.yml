@@ -130,7 +130,7 @@ jobs:
               sudo chown '${{ secrets.EC2_USER }}':'${{ secrets.EC2_USER }}' /opt/my-agent/.env.local
             fi
 
-            eval "\$(python3 /tmp/export_env_keys.py /etc/my-agent.env LIVEKIT_API_KEY LIVEKIT_API_SECRET LIVEKIT_PUBLIC_URL)"
+            eval \"\$(python3 /tmp/export_env_keys.py /etc/my-agent.env LIVEKIT_API_KEY LIVEKIT_API_SECRET LIVEKIT_PUBLIC_URL)\"
             rm -f /tmp/export_env_keys.py
             : \"\${LIVEKIT_API_KEY:?LIVEKIT_API_KEY missing from ENV_LOCAL}\"
             : \"\${LIVEKIT_API_SECRET:?LIVEKIT_API_SECRET missing from ENV_LOCAL}\"
