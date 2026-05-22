@@ -1,6 +1,5 @@
-from typing import Any
-
 import os
+from typing import Any
 
 from livekit.agents import TurnHandlingOptions
 
@@ -8,6 +7,13 @@ from core.env import _env_bool, _env_float, _env_int
 from inferences.voice import _build_turn_detector
 
 _DEFAULT_TURN_DETECTION = object()
+
+
+def _interruption_mode() -> str:
+    mode = os.getenv("INTERRUPTION_MODE", "vad").strip().lower()
+    if mode in {"adaptive", "vad"}:
+        return mode
+    return "vad"
 
 
 def _build_turn_handling_options(
@@ -29,11 +35,23 @@ def _build_turn_handling_options(
             "alpha": _env_float("ENDPOINTING_ALPHA", 0.55, min_value=0.0, max_value=1.0),
         },
         interruption={
-            "mode" : "adaptive"
+            "enabled": _env_bool("INTERRUPTIONS_ENABLED", True),
+            "mode": _interruption_mode(),
+            "min_duration": _env_float(
+                "MIN_INTERRUPTION_DURATION", 0.5, min_value=0.05, max_value=3.0
+            ),
+            "min_words": _env_int("MIN_INTERRUPTION_WORDS", 0, min_value=0, max_value=10),
+            "discard_audio_if_uninterruptible": True,
+            "false_interruption_timeout": _env_float(
+                "FALSE_INTERRUPTION_TIMEOUT", 2.0, min_value=0.0, max_value=10.0
+            ),
+            "resume_false_interruption": True,
         },
         preemptive_generation={
             "enabled": _env_bool("PREEMPTIVE_GENERATION", True),
             "preemptive_tts": _env_bool("PREEMPTIVE_TTS", True),
-            "max_retries": _env_int("PREEMPTIVE_MAX_RETRIES", 1, min_value=0, max_value=5),
+            "max_retries": _env_int(
+                "PREEMPTIVE_MAX_RETRIES", 1, min_value=0, max_value=5
+            ),
         },
     )

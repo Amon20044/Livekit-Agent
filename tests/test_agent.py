@@ -120,6 +120,9 @@ def test_numeric_env_helpers_clamp_and_fallback(monkeypatch) -> None:
 def test_turn_handling_defaults_are_low_latency(monkeypatch) -> None:
     monkeypatch.delenv("MIN_ENDPOINTING_DELAY", raising=False)
     monkeypatch.delenv("MAX_ENDPOINTING_DELAY", raising=False)
+    monkeypatch.delenv("INTERRUPTION_MODE", raising=False)
+    monkeypatch.delenv("MIN_INTERRUPTION_DURATION", raising=False)
+    monkeypatch.delenv("MIN_INTERRUPTION_WORDS", raising=False)
     monkeypatch.delenv("PREEMPTIVE_GENERATION", raising=False)
     monkeypatch.delenv("PREEMPTIVE_TTS", raising=False)
 
@@ -128,8 +131,31 @@ def test_turn_handling_defaults_are_low_latency(monkeypatch) -> None:
     assert options["endpointing"]["mode"] == "dynamic"
     assert options["endpointing"]["min_delay"] == 0.22
     assert options["endpointing"]["max_delay"] == 0.9
+    assert options["interruption"]["mode"] == "vad"
+    assert options["interruption"]["min_duration"] == 0.5
+    assert options["interruption"]["min_words"] == 0
     assert options["preemptive_generation"]["enabled"] is True
     assert options["preemptive_generation"]["preemptive_tts"] is True
+
+
+def test_turn_handling_allows_explicit_adaptive_interruption(monkeypatch) -> None:
+    monkeypatch.setenv("INTERRUPTION_MODE", "adaptive")
+    monkeypatch.setenv("MIN_INTERRUPTION_DURATION", "0.35")
+    monkeypatch.setenv("MIN_INTERRUPTION_WORDS", "1")
+
+    options = _build_turn_handling_options(turn_detection=None)
+
+    assert options["interruption"]["mode"] == "adaptive"
+    assert options["interruption"]["min_duration"] == 0.35
+    assert options["interruption"]["min_words"] == 1
+
+
+def test_turn_handling_invalid_interruption_mode_falls_back_to_vad(monkeypatch) -> None:
+    monkeypatch.setenv("INTERRUPTION_MODE", "bad")
+
+    options = _build_turn_handling_options(turn_detection=None)
+
+    assert options["interruption"]["mode"] == "vad"
 
 
 def test_turn_handling_defaults_to_multilingual_detector(monkeypatch) -> None:
