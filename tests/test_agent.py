@@ -9,6 +9,7 @@ from app.agent_session import AnchorVoiceAgent
 from audio.background import _build_background_audio_player
 from core.env import _env_bool, _env_float, _env_int, _plugin_model
 from inferences import llm as llm_module
+from inferences import stt as stt_module
 from inferences import tts as tts_module
 from inferences import voice as voice_module
 from inferences.llm import (
@@ -22,14 +23,14 @@ from inferences.llm import (
 from inferences.tts import _build_tts
 from inferences.turn import _build_turn_handling_options
 from inferences.voice import _build_turn_detector, _deepgram_language
-from prompts.instructions import INITIAL_GREETING_INSTRUCTIONS
+from prompts.instructions import INITIAL_GREETING_INSTRUCTIONS, build_initial_greeting
 from telemetry.costs import (
     _cost_delta,
     _format_cost_summary,
     _loggable_costs,
     _session_costs,
 )
-from tools import send_confirmed_lead_email_and_save
+from tools import get_dialed_phone_number, send_confirmed_lead_email_and_save
 
 
 def test_anchor_agent_is_dreamlaunch_intake_focused(monkeypatch) -> None:
@@ -45,7 +46,30 @@ def test_anchor_agent_is_dreamlaunch_intake_focused(monkeypatch) -> None:
     assert (
         "Should I send this brief and booking link to your email?" in agent.instructions
     )
-    assert agent.tools == [send_confirmed_lead_email_and_save]
+    assert agent.tools == [send_confirmed_lead_email_and_save, get_dialed_phone_number]
+
+
+def test_agent_instructions_cover_typed_input_and_readback(monkeypatch) -> None:
+    monkeypatch.setenv("USE_EL", "false")
+
+    instructions = AnchorVoiceAgent().instructions
+
+    assert "type their email" in instructions
+    assert "keypad" in instructions
+    assert "get_dialed_phone_number" in instructions
+    assert "one digit at a time" in instructions
+
+
+def test_company_name_is_configurable_via_env(monkeypatch) -> None:
+    monkeypatch.setenv("USE_EL", "false")
+    monkeypatch.setenv("COMPANY_NAME", "Acme Studio")
+    monkeypatch.setenv("COMPANY_WEBSITE", "https://acme.example")
+
+    agent = AnchorVoiceAgent()
+
+    assert "Acme Studio" in agent.instructions
+    assert "DreamLaunch Studio" not in agent.instructions
+    assert "Acme Studio" in build_initial_greeting()
 
 
 @pytest.mark.asyncio
@@ -84,7 +108,7 @@ def test_anchor_agent_uses_english_language_defaults_with_elevenlabs(
 
     assert "English by default" in agent.instructions
     assert "Hindi by default" not in agent.instructions
-    assert agent.tools == [send_confirmed_lead_email_and_save]
+    assert agent.tools == [send_confirmed_lead_email_and_save, get_dialed_phone_number]
 
 
 def test_plugin_model_accepts_prefixed_and_legacy_values() -> None:
@@ -96,6 +120,39 @@ def test_plugin_model_accepts_prefixed_and_legacy_values() -> None:
         "eleven_flash_v2_5"
     )
     assert _plugin_model("sarvam/bulbul:v3", "sarvam") == "bulbul:v3"
+
+
+def test_build_stt_enables_smart_format_by_default(monkeypatch) -> None:
+    captured: dict = {}
+
+    class FakeSTT:
+        def __init__(self, **kwargs) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setattr(stt_module.deepgram, "STT", FakeSTT)
+    monkeypatch.delenv("DEEPGRAM_SMART_FORMAT", raising=False)
+
+    stt_module.build_stt("nova-3", "multi")
+
+    # smart_format makes spoken emails/phone numbers transcribe in written form.
+    assert captured["smart_format"] is True
+    assert captured["interim_results"] is True
+    assert captured["no_delay"] is True
+
+
+def test_build_stt_smart_format_can_be_disabled(monkeypatch) -> None:
+    captured: dict = {}
+
+    class FakeSTT:
+        def __init__(self, **kwargs) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setattr(stt_module.deepgram, "STT", FakeSTT)
+    monkeypatch.setenv("DEEPGRAM_SMART_FORMAT", "false")
+
+    stt_module.build_stt("nova-3", "multi")
+
+    assert captured["smart_format"] is False
 
 
 def test_env_bool(monkeypatch) -> None:
@@ -131,11 +188,20 @@ def test_turn_handling_defaults_are_low_latency(monkeypatch) -> None:
     assert options["endpointing"]["mode"] == "dynamic"
     assert options["endpointing"]["min_delay"] == 0.22
     assert options["endpointing"]["max_delay"] == 0.9
-    assert options["interruption"]["mode"] == "vad"
+    # Adaptive by default so backchannel ("okay", "right") doesn't interrupt.
+    assert options["interruption"]["mode"] == "adaptive"
     assert options["interruption"]["min_duration"] == 0.5
     assert options["interruption"]["min_words"] == 0
     assert options["preemptive_generation"]["enabled"] is True
     assert options["preemptive_generation"]["preemptive_tts"] is True
+
+
+def test_turn_handling_can_force_vad_interruption(monkeypatch) -> None:
+    monkeypatch.setenv("INTERRUPTION_MODE", "vad")
+
+    options = _build_turn_handling_options(turn_detection=None)
+
+    assert options["interruption"]["mode"] == "vad"
 
 
 def test_turn_handling_allows_explicit_adaptive_interruption(monkeypatch) -> None:

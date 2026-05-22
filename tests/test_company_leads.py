@@ -3,7 +3,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from tools import dreamlaunch
+# Imported under its historical name; the Redis namespace is still "dreamlaunch:".
+from tools import company as dreamlaunch
 
 
 class FakeRedis:
@@ -13,6 +14,139 @@ class FakeRedis:
     def set(self, key, value, ex=None):
         self.calls.append({"key": key, "value": value, "ex": ex})
         return True
+
+
+@pytest.mark.parametrize(
+    "spoken, expected",
+    [
+        ("amon sharma 2000 at gmail dot com", "amonsharma2000@gmail.com"),
+        ("amon@example.com", "amon@example.com"),
+        ("Amon @ Gmail . com", "amon@gmail.com"),
+        ("john dot doe at the rate company dot co dot uk", "john.doe@company.co.uk"),
+        ("amon underscore s at gmail dot com", "amon_s@gmail.com"),
+        ("", ""),
+    ],
+)
+def test_normalize_spoken_email(spoken, expected) -> None:
+    assert dreamlaunch.normalize_spoken_email(spoken) == expected
+
+
+@pytest.mark.parametrize(
+    "email, valid",
+    [
+        ("amon@example.com", True),
+        ("amonsharma2000@gmail.com", True),
+        ("amon at gmail dot com", False),
+        ("amon@", False),
+        ("amon@gmail", False),
+        ("@gmail.com", False),
+        ("", False),
+    ],
+)
+def test_is_valid_email(email, valid) -> None:
+    assert dreamlaunch.is_valid_email(email) is valid
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        ("+91 82009 62735", "+918200962735"),
+        ("plus 91 8200962735", "+918200962735"),
+        ("820-096-2735", "8200962735"),
+        ("", ""),
+    ],
+)
+def test_normalize_phone(raw, expected) -> None:
+    assert dreamlaunch.normalize_phone(raw) == expected
+
+
+@pytest.mark.parametrize(
+    "phone, valid",
+    [
+        ("+918200962735", True),
+        ("8200962", True),
+        ("12345", False),
+        ("", False),
+    ],
+)
+def test_is_valid_phone(phone, valid) -> None:
+    assert dreamlaunch.is_valid_phone(phone) is valid
+
+
+@pytest.mark.asyncio
+async def test_send_confirmed_lead_rejects_malformed_email(monkeypatch) -> None:
+    sent = []
+    monkeypatch.setattr(
+        dreamlaunch,
+        "send_dreamlaunch_recap_email",
+        lambda lead: sent.append(lead),
+    )
+
+    result = await dreamlaunch.send_confirmed_lead_email_and_save._func(
+        None,
+        name="Amon",
+        email="amon at gmail",
+        company="Arisyn",
+        reason_for_meet="Wants to build an MVP",
+        email_confirmed=True,
+    )
+
+    assert "malformed" in result
+    assert sent == []
+
+
+@pytest.mark.asyncio
+async def test_send_confirmed_lead_normalizes_spoken_email(monkeypatch) -> None:
+    events = []
+
+    class FakeParticipant:
+        identity = "sip_+918200962735"
+
+    class FakeRoom:
+        def __init__(self) -> None:
+            self.name = "woice-call-1"
+            self.remote_participants = {"caller": FakeParticipant()}
+
+    class FakeSpeech:
+        async def wait_for_playout(self):
+            events.append("played")
+
+    class FakeSession:
+        def __init__(self) -> None:
+            self.room = FakeRoom()
+
+        def say(self, text, *, allow_interruptions, add_to_chat_ctx):
+            return FakeSpeech()
+
+    class FakeContext:
+        def __init__(self) -> None:
+            self.session = FakeSession()
+
+    monkeypatch.setattr(
+        dreamlaunch,
+        "send_dreamlaunch_recap_email",
+        lambda lead: events.append(("email", lead["email"])),
+    )
+    monkeypatch.setattr(
+        dreamlaunch, "save_completed_lead_to_redis", lambda **kw: {"lead_id": "lead_x"}
+    )
+
+    async def fake_end(context):
+        events.append("end")
+
+    monkeypatch.setattr(dreamlaunch, "_end_room_after_playout", fake_end)
+
+    result = await dreamlaunch.send_confirmed_lead_email_and_save._func(
+        FakeContext(),
+        name="Amon",
+        email="amon sharma 2000 at gmail dot com",
+        company="Arisyn",
+        reason_for_meet="Wants to build an MVP",
+        email_confirmed=True,
+    )
+
+    assert "Email sent and lead saved" in result
+    assert ("email", "amonsharma2000@gmail.com") in events
 
 
 def test_save_completed_lead_requires_confirmed_email() -> None:

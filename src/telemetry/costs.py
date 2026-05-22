@@ -46,7 +46,9 @@ def _usage_costs(
     costs = {"deepgram": 0.0, "llm": 0.0, tts_provider: 0.0}
 
     if usage.type == "stt_usage":
-        costs["deepgram"] = usage.audio_duration / 60.0 * pricing["deepgram_stt_per_minute"]
+        costs["deepgram"] = (
+            usage.audio_duration / 60.0 * pricing["deepgram_stt_per_minute"]
+        )
     elif usage.type == "llm_usage":
         billable_input_tokens = max(usage.input_tokens - usage.input_cached_tokens, 0)
         costs["llm"] = (
@@ -55,7 +57,9 @@ def _usage_costs(
         )
     elif usage.type == "tts_usage":
         costs[tts_provider] = (
-            usage.characters_count / 1_000.0 * pricing[f"{tts_provider}_tts_per_1k_chars"]
+            usage.characters_count
+            / 1_000.0
+            * pricing[f"{tts_provider}_tts_per_1k_chars"]
         )
 
     return costs
@@ -70,7 +74,9 @@ def _session_costs(
     totals = {"deepgram": 0.0, "llm": 0.0, tts_provider: 0.0}
 
     for usage in session_usage.model_usage:
-        for provider, cost in _usage_costs(usage, pricing, tts_provider=tts_provider).items():
+        for provider, cost in _usage_costs(
+            usage, pricing, tts_provider=tts_provider
+        ).items():
             totals[provider] += cost
 
     totals["total"] = sum(totals.values())
@@ -86,7 +92,9 @@ def _cost_delta(
         for key in ("deepgram", "llm", "sarvam", "elevenlabs", "total")
         if key in current or key in previous
     ]
-    return {key: max(current.get(key, 0.0) - previous.get(key, 0.0), 0.0) for key in keys}
+    return {
+        key: max(current.get(key, 0.0) - previous.get(key, 0.0), 0.0) for key in keys
+    }
 
 
 def _format_cost_summary(costs: dict[str, float]) -> str:

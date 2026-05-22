@@ -12,6 +12,7 @@ from livekit.agents import (
 )
 from livekit.plugins import ai_coustics, silero
 
+from app.dtmf import DtmfCollector, register_dtmf_collector
 from audio.background import _build_background_audio_player
 from core.env import _env_bool, _env_float, _plugin_model
 from inferences.llm import _build_llm, _llm_provider
@@ -19,7 +20,7 @@ from inferences.stt import build_stt
 from inferences.tts import _build_tts
 from inferences.turn import _build_turn_handling_options
 from inferences.voice import _deepgram_language, _tts_provider, _use_elevenlabs_tts
-from prompts.instructions import INITIAL_GREETING_INSTRUCTIONS, build_agent_instructions
+from prompts.instructions import build_agent_instructions, build_initial_greeting
 from settings import (
     bedrock_model,
     deepgram_model,
@@ -37,7 +38,7 @@ from telemetry.costs import (
     _pricing_config,
     _session_costs,
 )
-from tools import send_confirmed_lead_email_and_save
+from tools import get_dialed_phone_number, send_confirmed_lead_email_and_save
 
 logger = logging.getLogger("agent")
 
@@ -46,12 +47,12 @@ class AnchorVoiceAgent(Agent):
     def __init__(self) -> None:
         super().__init__(
             instructions=build_agent_instructions(_use_elevenlabs_tts()),
-            tools=[send_confirmed_lead_email_and_save],
+            tools=[send_confirmed_lead_email_and_save, get_dialed_phone_number],
         )
 
     async def on_enter(self) -> None:
         await self.session.generate_reply(
-            instructions=INITIAL_GREETING_INSTRUCTIONS,
+            instructions=build_initial_greeting(),
             allow_interruptions=True,
         )
 
@@ -110,6 +111,10 @@ async def entrypoint(ctx: JobContext):
         tts_voice,
     )
 
+    # Phone callers enter their number on the keypad; the collector buffers those
+    # DTMF digits so the agent can read them back instead of guessing from speech.
+    dtmf_collector = DtmfCollector()
+
     session = AgentSession(
         stt=build_stt(stt_model, stt_language),
         llm=_build_llm(llm_model),
@@ -124,7 +129,10 @@ async def entrypoint(ctx: JobContext):
             "AEC_WARMUP_DURATION", 0.1, min_value=0.0, max_value=5.0
         ),
         user_away_timeout=None,
+        userdata={"dtmf": dtmf_collector},
     )
+
+    register_dtmf_collector(ctx.room, dtmf_collector)
 
     @session.on("error")
     def _on_error(ev: ErrorEvent):

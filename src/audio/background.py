@@ -29,7 +29,9 @@ def _build_background_audio_player() -> BackgroundAudioPlayer | None:
     if _env_bool("BACKGROUND_AMBIENT_SOUND_ENABLED", False):
         ambient_sound = AudioConfig(
             ambient_clip,
-            volume=_env_float("BACKGROUND_AMBIENT_VOLUME", 0.18, min_value=0.0, max_value=1.0),
+            volume=_env_float(
+                "BACKGROUND_AMBIENT_VOLUME", 0.18, min_value=0.0, max_value=1.0
+            ),
         )
 
     thinking_sound = None
@@ -40,7 +42,9 @@ def _build_background_audio_player() -> BackgroundAudioPlayer | None:
         )
         thinking_sound = AudioConfig(
             thinking_clip,
-            volume=_env_float("BACKGROUND_THINKING_VOLUME", 0.10, min_value=0.0, max_value=1.0),
+            volume=_env_float(
+                "BACKGROUND_THINKING_VOLUME", 0.10, min_value=0.0, max_value=1.0
+            ),
         )
         if thinking_clip == BuiltinAudioClip.KEYBOARD_TYPING:
             thinking_sound = [
@@ -69,5 +73,7 @@ def _build_background_audio_player() -> BackgroundAudioPlayer | None:
     return BackgroundAudioPlayer(
         ambient_sound=ambient_sound,
         thinking_sound=thinking_sound,
-        stream_timeout_ms=_env_int("BACKGROUND_AUDIO_STREAM_TIMEOUT_MS", 200, min_value=50, max_value=5000),
+        stream_timeout_ms=_env_int(
+            "BACKGROUND_AUDIO_STREAM_TIMEOUT_MS", 200, min_value=50, max_value=5000
+        ),
     )

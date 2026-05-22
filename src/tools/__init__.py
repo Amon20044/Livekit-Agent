@@ -6,14 +6,26 @@ from urllib.parse import urlsplit, urlunsplit
 import aiohttp
 from livekit.agents import RunContext, function_tool
 
-from tools.dreamlaunch import (
+from tools.company import (
+    is_valid_email as is_valid_email,
+)
+from tools.company import (
+    normalize_phone as normalize_phone,
+)
+from tools.company import (
+    normalize_spoken_email as normalize_spoken_email,
+)
+from tools.company import (
     save_completed_lead_to_redis as save_completed_lead_to_redis,
 )
-from tools.dreamlaunch import (
+from tools.company import (
     send_confirmed_lead_email_and_save as send_confirmed_lead_email_and_save,
 )
-from tools.dreamlaunch import (
+from tools.company import (
     send_dreamlaunch_recap_email as send_dreamlaunch_recap_email,
+)
+from tools.telephony import (
+    get_dialed_phone_number as get_dialed_phone_number,
 )
 
 logger = logging.getLogger(__name__)

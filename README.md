@@ -1,363 +1,206 @@
-<a href="https://livekit.io/">
-  <img src="./.github/assets/livekit-mark.png" alt="LiveKit logo" width="100" height="100">
-</a>
+<div align="center">
 
-# LiveKit Agents Starter - Python
+# 🎙️ Woice
 
-A complete starter project for building voice AI apps with [LiveKit Agents for Python](https://github.com/livekit/agents) and [LiveKit Cloud](https://cloud.livekit.io/).
+### Voice AI agents that actually finish the conversation.
 
-The starter project includes:
+**Real-time, multilingual voice agents that capture the details, read them back, remember the caller, and turn every call into structured, actionable data.**
 
-- A simple voice AI assistant, ready for extension and customization
-- A voice AI pipeline built on [LiveKit Inference](https://docs.livekit.io/agents/models/inference)
-  with [models](https://docs.livekit.io/agents/models) from OpenAI, Cartesia, and Deepgram. More than 50 other model providers are supported, including [Realtime models](https://docs.livekit.io/agents/models/realtime)
-- Eval suite based on the LiveKit Agents [testing & evaluation framework](https://docs.livekit.io/agents/start/testing/)
-- [LiveKit Turn Detector](https://docs.livekit.io/agents/logic/turns/turn-detector/) for contextually-aware speaker detection, with multilingual support
-- [Background voice cancellation](https://docs.livekit.io/transport/media/noise-cancellation/)
-- Deep session insights from LiveKit [Agent Observability](https://docs.livekit.io/deploy/observability/)
-- A Dockerfile ready for [production deployment to LiveKit Cloud](https://docs.livekit.io/deploy/agents/)
+Built on [LiveKit Agents](https://github.com/livekit/agents) · Powered by Deepgram, Gemini, Sarvam & ElevenLabs · Designed for India 🇮🇳 and the world.
 
-This starter app is compatible with any [custom web/mobile frontend](https://docs.livekit.io/frontends/) or [telephony](https://docs.livekit.io/telephony/).
+</div>
 
-## Using coding agents
+---
 
-This project is designed to work with coding agents like [Claude Code](https://claude.com/product/claude-code), [Cursor](https://www.cursor.com/), and [Codex](https://openai.com/codex/).
+## Why Woice
 
-For your convenience, LiveKit offers both a CLI and an [MCP server](https://docs.livekit.io/reference/developer-tools/docs-mcp/) that can be used to browse and search its documentation. The [LiveKit CLI](https://docs.livekit.io/intro/basics/cli/) (`lk docs`) works with any coding agent that can run shell commands. Install it for your platform:
+Voice AI demos look magical for thirty seconds. Then you put one on a real phone line and it falls apart on the boring, mission-critical 20%:
 
-**macOS:**
+- It hears **"amon sharma 2000 at gmail dot com"** and writes down garbage.
+- You say **"okay"** while it's talking and it stops dead, thinking you interrupted.
+- A returning caller has to **start from zero** every single time.
+- The call ends and you're left with **an audio file, not a lead.**
 
-```console
-brew install livekit-cli
+Those are the moments that decide whether a voice agent is a toy or a business. **Woice is built around getting those moments right** — accurate data capture, human-like turn-taking, multilingual conversation, and memory across calls — and then turning every call into clean, structured data you can act on.
+
+The included reference agent is **DreamLaunch Studio**, a voice concierge that qualifies inbound leads, captures their brief, confirms it, and emails a recap with a booking link — fully in Hindi or English. It's a working blueprint for any "answer, qualify, capture, book" voice workflow: agencies, clinics, real estate, support desks, and beyond.
+
+---
+
+## ✨ What happens on a call
+
+These are the caller-facing features — what someone actually experiences when they talk to a Woice agent.
+
+| Feature | What the caller feels |
+|---|---|
+| 🗣️ **Natural multilingual conversation** | Speaks Hindi by default and switches to the caller's language mid-sentence — no robotic "please select a language." |
+| ⚡ **Sub-second responsiveness** | Tuned end-to-end for "first useful audio" — interim transcripts, preemptive generation, and streaming TTS mean replies start almost immediately. |
+| 🤫 **Smart interruption handling** | Powered by **adaptive barge-in detection**: backchannel like *"okay," "right," "uh-huh"* no longer cuts the agent off — only genuine interruptions do. |
+| 📧 **Reliable email & phone capture** | Callers can **type** their email/phone into the chat, **say** it slowly, or **enter it on the keypad** — and the agent always **reads it back to confirm.** |
+| 🔢 **Keypad (DTMF) entry** | On phone calls, callers punch in their number on the dial pad and press `#`. No more spelling out ten digits over a noisy line. |
+| ✅ **Confirm-before-commit** | The agent summarizes everything it captured and asks permission before sending anything. Malformed emails are caught and re-collected, never silently sent. |
+| 🔎 **Live web knowledge** | Can pull current information mid-conversation via real-time search (Google News / AI Mode) when the caller asks about something recent. |
+| 🎧 **A room that feels alive** | Subtle background ambience and quiet "thinking" sounds keep the call from feeling sterile or dropped. |
+| 📨 **A real outcome** | Ends with an emailed recap + booking link, and a structured lead saved to the database — not just a transcript. |
+
+---
+
+## 🧰 What the platform gives builders
+
+The features under the hood that make Woice agents reliable and extensible.
+
+- **🔌 Swappable model stack.** LLM, STT, and TTS are all pluggable via environment variables — no code changes to switch providers.
+  - **STT:** Deepgram `nova-3` (multilingual, smart-formatted for clean emails/numbers)
+  - **LLM:** Google Gemini 2.5 Flash Lite by default, with AWS Bedrock and Groq as drop-in alternatives, plus an automatic fallback adapter
+  - **TTS:** Sarvam Bulbul (Indian languages) or ElevenLabs (English), selectable per deployment
+- **🧠 Adaptive turn-taking.** Silero VAD + LiveKit's multilingual turn detector + adaptive interruption, all tunable.
+- **🛠️ Function-tool framework.** Tools are plain Python functions — lead capture + email, DTMF retrieval, and live search ship in the box; add your own in minutes.
+- **🗃️ Stateful by design.** Redis-backed lead storage with TTLs, ready to grow into full cross-call memory (see [Roadmap](#-roadmap)).
+- **💰 Cost & usage telemetry.** Optional per-turn and per-call cost accounting across STT/LLM/TTS, plus LiveKit observability.
+- **🧪 Test-driven.** A full `pytest` suite covers instructions, tools, turn-handling, capture/validation, and DTMF — agent behavior is verified, not guessed.
+- **🚀 Deploy anywhere.** Production `Dockerfile`, LiveKit Cloud support, and one-command EC2 deploy scripts + GitHub Actions.
+
+---
+
+## 🏗️ How it works
+
+```text
+ caller (web / phone / SIP)
+        │  audio
+        ▼
+ ┌──────────────┐   ┌──────────────────┐   ┌──────────────┐   ┌──────────────┐
+ │ LiveKit room │──▶│ Deepgram STT     │──▶│ Turn handling│──▶│ Gemini LLM   │
+ │ (WebRTC/SIP) │   │ (multilingual,   │   │ VAD + turn   │   │ + tools      │
+ │              │   │  smart-format)   │   │ detector +   │   │ (lead, DTMF, │
+ │              │◀──│                  │◀──│ adaptive     │◀──│  search...)  │
+ └──────┬───────┘   └──────────────────┘   │ interruption │   └──────┬───────┘
+        │  audio out                        └──────────────┘          │
+        ▼                                                             ▼
+   Sarvam / ElevenLabs TTS  ◀───────────────────────────────  Redis (lead state)
+        +                                                             │
+   background ambience track                                          ▼
+                                                          Email recap + booking link
 ```
 
-**Linux:**
+Text input rides the same pipeline: anything the caller **types** arrives on LiveKit's `lk.chat` stream and is handled exactly like speech — which is why typing an email "just works" alongside talking.
 
-```console
-curl -sSL https://get.livekit.io/cli | bash
-```
+---
 
-**Windows:**
+## 🚀 Quickstart
 
-```console
-winget install LiveKit.LiveKitCLI
-```
-
-The `lk docs` subcommand requires version 2.15.0 or higher. Check your version with `lk --version` and update if needed. Once installed, your coding agent can search and browse LiveKit documentation directly from the terminal:
-
-```console
-lk docs search "voice agents"
-lk docs get-page /agents/start/voice-ai-quickstart
-```
-
-See the [Using coding agents](https://docs.livekit.io/intro/coding-agents/) guide for more details, including MCP server setup.
-
-The project includes a complete [AGENTS.md](AGENTS.md) file for these assistants. You can modify this file to suit your needs. To learn more about this file, see [https://agents.md](https://agents.md).
-
-## Dev Setup
-
-Create a project from this template with the LiveKit CLI (recommended):
+This project uses the [`uv`](https://docs.astral.sh/uv/) package manager.
 
 ```bash
-lk cloud auth
-lk agent init my-agent --template agent-starter-python
-```
-
-The CLI clones the template and configures your environment. Then follow the rest of this guide from [Run the agent](#run-the-agent).
-
-<details>
-<summary>Alternative: Manual setup without the CLI</summary>
-
-Clone the repository and install dependencies to a virtual environment:
-
-```console
-cd agent-starter-python
+# 1. Install dependencies
 uv sync
-```
 
-Sign up for [LiveKit Cloud](https://cloud.livekit.io/) then set up the environment by copying `.env.example` to `.env.local` and filling in the required keys:
+# 2. Configure your environment
+#    Copy the example and fill in your keys (LiveKit, Deepgram, Gemini, Sarvam/ElevenLabs, Redis, SMTP)
+cp .env.example .env.local
 
-- `LIVEKIT_URL`
-- `LIVEKIT_API_KEY`
-- `LIVEKIT_API_SECRET`
-
-You can load the LiveKit environment automatically using the [LiveKit CLI](https://docs.livekit.io/intro/basics/cli/):
-
-```bash
-lk cloud auth
-lk app env -w -d .env.local
-```
-
-</details>
-
-## Run the agent
-
-Before your first run, you must download certain models such as [Silero VAD](https://docs.livekit.io/agents/logic/turns/vad/) and the [LiveKit turn detector](https://docs.livekit.io/agents/logic/turns/turn-detector/):
-
-```console
+# 3. Download required models (Silero VAD + turn detector) — first run only
 uv run python src/agent.py download-files
-```
 
-Next, run this command to speak to your agent directly in your terminal:
-
-```console
+# 4. Talk to the agent right in your terminal
 uv run python src/agent.py console
 ```
 
-To run the agent for use with a frontend or telephony, use the `dev` command:
+Run modes:
 
-```console
-uv run python src/agent.py dev
+| Command | Use it for |
+|---|---|
+| `uv run python src/agent.py console` | Talk to the agent locally in your terminal |
+| `uv run python src/agent.py dev` | Run against a real frontend or telephony (dev) |
+| `uv run python src/agent.py start` | Production worker |
+
+> **Tip:** You can load your LiveKit credentials automatically with the [LiveKit CLI](https://docs.livekit.io/intro/basics/cli/): `lk cloud auth && lk app env -w -d .env.local`.
+
+### Frontends & telephony
+
+Woice works with any [custom web/mobile frontend](https://docs.livekit.io/frontends/) or [telephony](https://docs.livekit.io/telephony/) setup. The fastest start is the React app — and because it has a chat box, the **type-your-email** flow works out of the box:
+
+| Platform | Starter |
+|---|---|
+| **Web (React/Next.js)** | [`agent-starter-react`](https://github.com/livekit-examples/agent-starter-react) |
+| **iOS / macOS** | [`agent-starter-swift`](https://github.com/livekit-examples/agent-starter-swift) |
+| **Flutter** | [`agent-starter-flutter`](https://github.com/livekit-examples/agent-starter-flutter) |
+| **React Native** | [`voice-assistant-react-native`](https://github.com/livekit-examples/voice-assistant-react-native) |
+| **Android** | [`agent-starter-android`](https://github.com/livekit-examples/agent-starter-android) |
+| **Web Embed** | [`agent-starter-embed`](https://github.com/livekit-examples/agent-starter-embed) |
+| **Telephony (SIP)** | [Docs](https://docs.livekit.io/telephony/) — enables inbound calls + DTMF keypad capture |
+
+---
+
+## 🧪 Tests
+
+Agent behavior is covered by a `pytest` suite. **When you change instructions, tools, or turn-handling, write the test first** (see [AGENTS.md](AGENTS.md)).
+
+```bash
+uv run pytest          # run everything
+uv run ruff format     # format
+uv run ruff check      # lint
 ```
 
-In production, use the `start` command:
+---
 
-```console
-uv run python src/agent.py start
-```
+## ⚙️ Configuration & tuning
 
-## Frontend & Telephony
+Woice is tuned for a fast, lively voice experience and is controlled almost entirely through environment variables in `.env.local`. The headline knobs:
 
-Get started quickly with our pre-built frontend starter apps, or add telephony support:
-
-| Platform | Link | Description |
-|----------|----------|-------------|
-| **Web** | [`livekit-examples/agent-starter-react`](https://github.com/livekit-examples/agent-starter-react) | Web voice AI assistant with React & Next.js |
-| **iOS/macOS** | [`livekit-examples/agent-starter-swift`](https://github.com/livekit-examples/agent-starter-swift) | Native iOS, macOS, and visionOS voice AI assistant |
-| **Flutter** | [`livekit-examples/agent-starter-flutter`](https://github.com/livekit-examples/agent-starter-flutter) | Cross-platform voice AI assistant app |
-| **React Native** | [`livekit-examples/voice-assistant-react-native`](https://github.com/livekit-examples/voice-assistant-react-native) | Native mobile app with React Native & Expo |
-| **Android** | [`livekit-examples/agent-starter-android`](https://github.com/livekit-examples/agent-starter-android) | Native Android app with Kotlin & Jetpack Compose |
-| **Web Embed** | [`livekit-examples/agent-starter-embed`](https://github.com/livekit-examples/agent-starter-embed) | Voice AI widget for any website |
-| **Telephony** | [Documentation](https://docs.livekit.io/telephony/) | Add inbound or outbound calling to your agent |
-
-For advanced customization, see the [complete frontend guide](https://docs.livekit.io/frontends/).
-
-## Tests and evals
-
-This project includes a complete suite of evals, based on the LiveKit Agents [testing & evaluation framework](https://docs.livekit.io/agents/start/testing/). To run them, use `pytest`.
-
-```console
-uv run pytest
-```
-
-## Agent Optimization
-
-This agent is tuned for a fast, lively voice experience: the user stops speaking, the system detects the turn boundary quickly, the LLM starts producing a short answer early, TTS begins streaming audio before the full answer is complete, and a quiet background track keeps the room from feeling sterile.
-
-The pipeline is:
-
-```text
-microphone audio -> LiveKit room -> Deepgram multilingual STT -> turn handling -> Gemini LLM -> Sarvam TTS -> LiveKit room audio
-                                                -> background ambience track
-```
-
-### Latency Budget
-
-Voice latency is the sum of several small delays:
-
-- **Endpointing latency**: how long the system waits after silence before deciding the user is done.
-- **STT latency**: how quickly partial and final transcripts arrive.
-- **LLM first-token latency**: how quickly Gemini starts producing the answer.
-- **TTS first-audio latency**: how quickly Sarvam starts returning playable audio.
-- **Network/media latency**: how fast LiveKit can route audio between the browser, server, and agent.
-
-The current defaults optimize the “first useful audio” path rather than maximum reasoning depth. That is why the agent uses low endpointing delays, interim transcripts, preemptive generation, small TTS chunks, a short max answer length, and Gemini thinking budget `0`.
-
-Study links:
-
-- [LiveKit turn handling options](https://docs.livekit.io/reference/agents/turn-handling-options/)
-- [LiveKit speech and background audio](https://docs.livekit.io/agents/build/audio/)
-- [Deepgram STT integration for LiveKit Agents](https://docs.livekit.io/agents/integrations/deepgram/)
-- [Sarvam TTS integration for LiveKit Agents](https://docs.livekit.io/agents/models/tts/sarvam/)
-- [Google Gemini thinking controls](https://ai.google.dev/gemini-api/docs/thinking)
-
-### Turn Detection and Endpointing
-
-Turn detection answers: “Is the user still speaking, or should the agent answer now?”
-
-This project combines LiveKit turn handling with Silero VAD and the multilingual turn detector. VAD detects speech versus silence from the audio signal. The turn detector adds linguistic context across supported languages, so the agent can be less naive than “silence means done.”
-
-Important env values:
+### Conversation feel
 
 ```env
-MIN_ENDPOINTING_DELAY=0.22
-MAX_ENDPOINTING_DELAY=0.9
+# Turn-taking & interruptions
+INTERRUPTION_MODE=adaptive        # adaptive | vad  — adaptive ignores backchannel ("okay")
+MIN_ENDPOINTING_DELAY=0.22        # how soon the agent may answer after a pause
+MAX_ENDPOINTING_DELAY=0.9         # cap on how long it waits when unsure
 ENDPOINTING_MODE=dynamic
-ENDPOINTING_ALPHA=0.55
-DEEPGRAM_ENDPOINTING_MS=25
-```
 
-Conceptually:
-
-- Lower `MIN_ENDPOINTING_DELAY` means the agent can react sooner after a pause.
-- Lower `MAX_ENDPOINTING_DELAY` caps how long the agent waits when the turn detector is uncertain.
-- `dynamic` endpointing lets LiveKit adapt within the min/max range based on pause behavior.
-- Deepgram endpointing and interim results help transcripts arrive while the user is still speaking.
-
-ML concept to study: voice activity detection and endpointing are sequence classification problems over streaming audio. The model is estimating whether recent frames represent speech, silence, or a likely turn boundary.
-
-Study links:
-
-- [LiveKit VAD](https://docs.livekit.io/agents/logic/turns/vad/)
-- [LiveKit turn detector](https://docs.livekit.io/agents/logic/turns/turn-detector/)
-- [Deepgram endpointing and interim results](https://developers.deepgram.com/docs/understand-endpointing-interim-results)
-
-### STT Speed
-
-The agent uses Deepgram with:
-
-```env
+# Speech recognition
 DEEPGRAM_STT_MODEL=nova-3-general
 DEEPGRAM_STT_LANGUAGE=multi
-DEEPGRAM_ENDPOINTING_MS=25
-DEEPGRAM_SMART_FORMAT=false
-DEEPGRAM_FILLER_WORDS=false
-```
+DEEPGRAM_SMART_FORMAT=true         # formats spoken emails & numbers — keep on for capture accuracy
 
-In code, STT is configured with `interim_results=True` and `no_delay=True`. Interim results let downstream logic begin earlier. `no_delay` asks the provider not to hold transcripts for extra context. Smart formatting and filler words are disabled by default because they can add processing work and are less important for a spoken news assistant than quick intent capture.
-
-ML concept to study: streaming ASR is a partial decoding problem. The recognizer emits provisional hypotheses before finalizing the utterance. Faster partial hypotheses can reduce latency, but late words may be corrected as more audio context arrives.
-
-Study link:
-
-- [Deepgram STT integration for LiveKit Agents](https://docs.livekit.io/agents/integrations/deepgram/)
-
-### LLM Reasoning Budget
-
-The agent is configured for quick spoken answers:
-
-```env
+# Reasoning budget (kept low for snappy spoken replies)
 GEMINI_LLM_MODEL=gemini-2.5-flash-lite
 GEMINI_THINKING_BUDGET=0
 GEMINI_MAX_OUTPUT_TOKENS=220
-GEMINI_TEMPERATURE=0.35
 ```
 
-For voice UX, the best answer is often not the longest or deepest answer. The user is waiting in real time, so the agent should answer briefly and ask follow-up questions when needed. `GEMINI_THINKING_BUDGET=0` disables extra thinking tokens for Gemini 2.5 style models, reducing inference-time reasoning overhead. `GEMINI_MAX_OUTPUT_TOKENS=220` keeps replies compact so TTS can start and finish sooner.
+> **Adaptive interruption note:** the barge-in model runs on LiveKit Cloud's inference and needs an aligned-transcript STT (Deepgram qualifies). It's free and unlimited on LiveKit Cloud, with a monthly free tier in dev. If it isn't available (e.g. a self-hosted production worker), it automatically falls back to VAD — so setting `adaptive` is always safe.
 
-ML concept to study: inference-time reasoning trades latency and cost for deeper search. A higher thinking budget can improve hard reasoning, but it increases time-to-first-token. For conversational voice, low or zero budget is usually better unless the task is complex.
+### Latency presets
 
-Study links:
+Drop one of these into `.env.local` depending on your priority:
 
-- [Google Gemini thinking controls](https://ai.google.dev/gemini-api/docs/thinking)
-- [Vertex AI thinking budget guidance](https://docs.cloud.google.com/vertex-ai/generative-ai/docs/thinking)
-
-### Preemptive Generation
-
-The agent enables:
-
-```env
-PREEMPTIVE_GENERATION=true
-PREEMPTIVE_TTS=true
-PREEMPTIVE_MAX_SPEECH_DURATION=2.5
-PREEMPTIVE_MAX_RETRIES=1
-```
-
-Preemptive generation lets the agent begin preparing a response before the user turn is fully finalized. Preemptive TTS can begin preparing audio from early LLM output. This reduces perceived latency because work overlaps instead of happening strictly one step after another.
-
-The tradeoff: if the user continues speaking or the partial transcript changes, preemptive work may be discarded. This is why the generated speech duration and retries are kept bounded.
-
-ML/system concept to study: speculative execution. The system starts likely work early based on partial evidence, then either commits it or discards it when better evidence arrives.
-
-Study link:
-
-- [LiveKit turn handling options](https://docs.livekit.io/reference/agents/turn-handling-options/)
-
-### TTS Streaming
-
-The agent uses Sarvam Bulbul with streaming-focused options:
-
-```env
-SARVAM_TTS_MODEL=bulbul:v3
-SARVAM_TARGET_LANGUAGE_CODE=hi-IN
-SARVAM_SPEAKER=shubh
-SARVAM_PACE=1.0
-SARVAM_TEMPERATURE=0.6
-SARVAM_MIN_BUFFER_SIZE=50
-SARVAM_MAX_CHUNK_LENGTH=150
-```
-
-TTS latency is heavily affected by how much text the provider waits for before generating audio. Smaller chunks usually reduce time-to-first-audio, while larger chunks can improve prosody and naturalness. Sarvam exposes buffering and chunk length controls, so tune `SARVAM_MIN_BUFFER_SIZE` and `SARVAM_MAX_CHUNK_LENGTH` if the voice feels too eager or too delayed.
-
-`USE_TTS_ALIGNED_TRANSCRIPT=false` avoids alignment work that is useful for captions but not essential for fastest spoken output.
-
-ML concept to study: neural TTS performs sequence-to-sequence generation from text tokens to acoustic frames. Chunking controls how much future text context the model sees before it starts producing audio, so it directly affects latency versus prosody.
-
-Study links:
-
-- [LiveKit Sarvam TTS plugin](https://docs.livekit.io/agents/models/tts/sarvam/)
-- [Sarvam docs](https://docs.sarvam.ai/)
-
-### Background Ambience
-
-The agent adds a separate low-volume background audio track:
-
-```env
-BACKGROUND_AUDIO_ENABLED=true
-BACKGROUND_AMBIENT_CLIP=OFFICE_AMBIENCE
-BACKGROUND_AMBIENT_VOLUME=0.18
-BACKGROUND_THINKING_SOUND_ENABLED=true
-BACKGROUND_THINKING_VOLUME=0.16
-BACKGROUND_THINKING_VOLUME_ALT=0.12
-BACKGROUND_AUDIO_STREAM_TIMEOUT_MS=200
-```
-
-This does not come from the TTS voice. LiveKit publishes ambience as its own room audio track using `BackgroundAudioPlayer`. That matters because the agent can keep its speech clean while still making the room feel alive. Thinking sounds are synchronized with the agent lifecycle, so quiet keyboard sounds can play while the agent is working.
-
-Keep ambience subtle. If users strain to hear speech, lower `BACKGROUND_AMBIENT_VOLUME` to `0.08` or disable thinking sounds.
-
-Study links:
-
-- [LiveKit background audio docs](https://docs.livekit.io/agents/build/audio/#adding-background-audio)
-- [Python BackgroundAudioPlayer reference](https://docs.livekit.io/reference/python/livekit/agents/voice/background_audio.html)
-
-### Noise Cancellation
-
-The fast profile defaults to:
-
-```env
-ENABLE_NOISE_CANCELLATION=false
-```
-
-Noise cancellation can improve audio quality in noisy rooms, but it is another processing stage. For lowest latency in a controlled environment, keeping it off is reasonable. If users are in noisy places, turn it back on and measure the tradeoff.
-
-Study link:
-
-- [LiveKit noise cancellation](https://docs.livekit.io/transport/media/noise-cancellation/)
-
-### Tuning Guide
-
-Use these presets when adjusting production `ENV_LOCAL`:
-
-**Fastest**
+<details>
+<summary><b>Fastest</b> — responsiveness over polish</summary>
 
 ```env
 MIN_ENDPOINTING_DELAY=0.15
 MAX_ENDPOINTING_DELAY=0.65
-GEMINI_THINKING_BUDGET=0
 GEMINI_MAX_OUTPUT_TOKENS=160
 SARVAM_MIN_BUFFER_SIZE=30
 SARVAM_MAX_CHUNK_LENGTH=100
 BACKGROUND_AMBIENT_VOLUME=0.10
 ```
+</details>
 
-Best when responsiveness matters more than perfectly polished speech.
-
-**Balanced**
+<details open>
+<summary><b>Balanced</b> — the current default</summary>
 
 ```env
 MIN_ENDPOINTING_DELAY=0.22
 MAX_ENDPOINTING_DELAY=0.9
-GEMINI_THINKING_BUDGET=0
 GEMINI_MAX_OUTPUT_TOKENS=220
 SARVAM_MIN_BUFFER_SIZE=50
 SARVAM_MAX_CHUNK_LENGTH=150
 BACKGROUND_AMBIENT_VOLUME=0.18
 ```
+</details>
 
-This is the current default.
-
-**More Thoughtful**
+<details>
+<summary><b>More thoughtful</b> — depth over speed</summary>
 
 ```env
 MIN_ENDPOINTING_DELAY=0.35
@@ -366,76 +209,94 @@ GEMINI_THINKING_BUDGET=512
 GEMINI_MAX_OUTPUT_TOKENS=320
 SARVAM_MIN_BUFFER_SIZE=80
 SARVAM_MAX_CHUNK_LENGTH=220
-BACKGROUND_AMBIENT_VOLUME=0.12
+```
+</details>
+
+### The latency budget (and how to debug it)
+
+Perceived delay is a sum of stages — optimize the one that's actually slow:
+
+| Stage | What it is | Lever |
+|---|---|---|
+| **Endpointing** | Waiting after silence to decide the caller is done | `MIN/MAX_ENDPOINTING_DELAY`, Deepgram endpointing |
+| **STT** | Time to partial/final transcript | interim results + `no_delay` (on by default) |
+| **LLM** | Time to first token | `GEMINI_THINKING_BUDGET`, `GEMINI_MAX_OUTPUT_TOKENS` |
+| **TTS** | Time to first audio | `SARVAM_MIN_BUFFER_SIZE`, `SARVAM_MAX_CHUNK_LENGTH` |
+| **Network/media** | Routing audio over WebRTC/SIP | LiveKit server, ICE/TURN, host placement |
+
+The agent emits LiveKit metrics via `metrics.log_metrics` — **measure each stage before turning knobs.** Helpful references: [turn handling](https://docs.livekit.io/reference/agents/turn-handling-options/) · [adaptive interruption](https://docs.livekit.io/agents/build/turns/interruptions/) · [Deepgram STT](https://docs.livekit.io/agents/integrations/deepgram/) · [Gemini thinking](https://ai.google.dev/gemini-api/docs/thinking) · [Sarvam TTS](https://docs.livekit.io/agents/models/tts/sarvam/) · [background audio](https://docs.livekit.io/agents/build/audio/).
+
+---
+
+## 📁 Project structure
+
+```text
+src/
+├── agent.py                 # Worker entrypoint (keep this name — the Dockerfile uses it)
+├── app/
+│   ├── agent_session.py     # AnchorVoiceAgent + session wiring (STT/LLM/TTS/turn/DTMF)
+│   └── dtmf.py              # DTMF keypad collector for SIP callers
+├── inferences/             # Model builders: stt, llm, tts, turn detection, voice selection
+├── prompts/instructions.py  # Agent persona + capture/confirmation playbook
+├── tools/                   # Function tools: lead capture+email, DTMF, web search
+├── audio/background.py      # Background ambience + thinking sounds
+├── telemetry/costs.py       # Per-turn/per-call cost accounting
+└── core/                    # Env helpers + logging
+tests/                       # pytest suite (TDD for all behavior changes)
 ```
 
-Best for complex questions where a slightly slower answer is acceptable.
+---
 
-### Measuring Improvements
+## 📦 Deploying to production
 
-Use logs and metrics to separate the bottlenecks:
+A production-ready `Dockerfile` is included. Deploy to [LiveKit Cloud](https://docs.livekit.io/deploy/agents/) or your own infrastructure.
 
-- If the delay is before transcript finalization, tune Deepgram endpointing and LiveKit endpointing.
-- If transcript finalizes quickly but speech starts late, tune Gemini thinking/output tokens or Sarvam buffering.
-- If first response after idle is slow, look for cold starts, model downloads, or EC2 CPU/memory pressure.
-- If audio connects slowly or drops, inspect LiveKit server logs, ICE/TURN connectivity, and EC2 security groups.
+### EC2 (GitHub Actions)
 
-The agent logs LiveKit metrics through `metrics.log_metrics`, so use those timing events before guessing. A good voice agent is optimized by measuring each stage, not by turning every knob to the minimum.
+Run **Deploy Agent To EC2** from the **Actions** tab. It packages the app, ships it over SSH, builds the image, and starts the worker container. Required repository secrets:
 
-## Using this template repo for your own project
+| Secret | Purpose |
+|---|---|
+| `EC2_HOST` | Public IP or DNS of the host |
+| `EC2_USER` | SSH user (e.g. `ec2-user`) |
+| `EC2_PRIVATE_KEY` | Contents of your `.pem` key |
+| `ENV_LOCAL` | Full contents of your production `.env.local` |
 
-Once you've started your own project based on this repo, you should:
+The workflow installs `ENV_LOCAL` to `/etc/my-agent.env` and `/opt/my-agent/.env.local`, then builds and runs the agent container. It **does not touch your LiveKit server, SIP, ingress, or egress configuration** — those are managed independently.
 
-1. **Check in your `uv.lock`**: This file is currently untracked for the template, but you should commit it to your repository for reproducible builds and proper configuration management. (The same applies to `livekit.toml`, if you run your agents in LiveKit Cloud)
-
-2. **Remove the git tracking test**: Delete the "Check files not tracked in git" step from `.github/workflows/tests.yml` since you'll now want this file to be tracked. These are just there for development purposes in the template repo itself.
-
-3. **Add your own repository secrets**: You must [add secrets](https://docs.github.com/en/actions/how-tos/writing-workflows/choosing-what-your-workflow-does/using-secrets-in-github-actions) for `LIVEKIT_URL`, `LIVEKIT_API_KEY`, and `LIVEKIT_API_SECRET` so that the tests can run in CI.
-
-## Deploying to production
-
-This project is production-ready and includes a working `Dockerfile`. To deploy it to LiveKit Cloud or another environment, see the [deploying to production](https://docs.livekit.io/deploy/agents/) guide.
-
-### Deploy to EC2 with GitHub Actions (manual)
-
-This repository includes a minimal manual workflow at `.github/workflows/deploy-ec2.yml` that deploys over SSH and starts the agent worker on your EC2 host.
-
-Before using it:
-
-- Ensure SSH access to the EC2 host from GitHub Actions runners.
-- Add these GitHub repository secrets:
-  - `EC2_HOST` (public IP or DNS)
-  - `EC2_USER` (for example `ec2-user`)
-  - `EC2_PRIVATE_KEY` (contents of your `.pem` key)
-  - `ENV_LOCAL` (the full contents of your production `.env.local` file)
-
-The workflow writes `ENV_LOCAL` to `/etc/my-agent.env` and `/opt/my-agent/.env.local` on EC2. It also derives `/opt/livekit/egress.yaml`, `/opt/livekit/ingress.yaml`, and the LiveKit server key block from the same `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` values.
-
-How to run:
-
-1. Open **Actions** and run **Deploy Agent To EC2**.
-2. Optionally adjust `ref`, `app_dir`, `env_file`, and `ssh_port`.
-
-The workflow uploads the repo and executes `scripts/ec2/start_agent_worker.sh` over SSH, then prints recent worker logs.
-
-### Deploy from your machine with host/user/pem
-
-You can also deploy directly without GitHub Actions:
-
-```bash
-scripts/ec2/deploy_via_ssh.sh <ec2_host> <ec2_user> <pem_file>
-```
-
-Optional arguments:
+### EC2 (from your machine)
 
 ```bash
 scripts/ec2/deploy_via_ssh.sh <ec2_host> <ec2_user> <pem_file> [app_dir] [env_file] [ssh_port]
 ```
 
-## Self-hosted LiveKit
+### Self-hosting LiveKit
 
-You can also self-host LiveKit instead of using LiveKit Cloud. See the [self-hosting](https://docs.livekit.io/transport/self-hosting/local/) guide for more information. If you choose to self-host, you'll need to also use [model plugins](https://docs.livekit.io/agents/models/#plugins) instead of LiveKit Inference and will need to remove the [LiveKit Cloud noise cancellation](https://docs.livekit.io/transport/media/noise-cancellation/) plugin.
+You can self-host the LiveKit server instead of using LiveKit Cloud — see the [self-hosting guide](https://docs.livekit.io/transport/self-hosting/local/). Note that some Cloud-only features (adaptive interruption inference, Cloud noise cancellation) gracefully degrade or need alternatives when self-hosted.
 
-## License
+---
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+## 🗺️ Roadmap
+
+Woice today is the **agent runtime** — the hard, reliable voice layer. The vision is the **platform around it**: turning conversations into a product surface you can sell.
+
+> The items below are planned/in-progress, not yet shipped.
+
+- **🧠 Returning-caller memory.** Recognize a caller by phone number on connect, and resume where they left off. New caller → fresh intake. Partial history → *"Welcome back — let's pick up where we stopped."* Completed before → greet them by name and ask if there's anything else. All state persisted in Redis as the source of truth.
+- **📊 Multi-tenant dashboard.** A control plane to spin up and configure agents (persona, voice, language, tools) without touching code, watch **live transcripts**, and browse every captured lead.
+- **📈 Conversation analytics.** Conversion rates, drop-off points, capture success, latency percentiles, and language mix — per agent and per campaign.
+- **🔁 Prompt & voice A/B testing.** Compare personas, voices, and latency presets on live traffic and keep what converts.
+- **🔗 CRM & calendar integrations.** Push qualified leads straight into HubSpot/Salesforce/Sheets and book real calendar slots.
+- **💳 Usage-based billing.** Built on the existing cost telemetry, so every account is metered and monetizable.
+
+The thesis: the runtime is the wedge; **the dashboard, the data, and the integrations are the platform.**
+
+---
+
+## 🤝 Working with coding agents
+
+This repo is built to be developed with coding agents (Claude Code, Cursor, Codex). See [AGENTS.md](AGENTS.md) for project conventions — most importantly, **test-driven development for any agent-behavior change**, and how to use the [LiveKit docs CLI/MCP](https://docs.livekit.io/reference/developer-tools/docs-mcp/) for up-to-date references.
+
+## 📄 License
+
+MIT — see [LICENSE](LICENSE).

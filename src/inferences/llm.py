@@ -5,14 +5,21 @@ from livekit.agents import llm
 from livekit.plugins import aws, google, groq
 
 from core.env import _env_bool, _env_float, _env_int, _plugin_model
-from settings import gemini_fallback_model, gemini_thinking_level, groq_api_key, google_api_key
+from settings import (
+    gemini_fallback_model,
+    gemini_thinking_level,
+    google_api_key,
+    groq_api_key,
+)
 
 
 def _build_llm_kwargs(model: str) -> dict[str, Any]:
     kwargs: dict[str, Any] = {
         "model": model,
         "api_key": google_api_key,
-        "temperature": _env_float("GEMINI_TEMPERATURE", 0.35, min_value=0.0, max_value=2.0),
+        "temperature": _env_float(
+            "GEMINI_TEMPERATURE", 0.35, min_value=0.0, max_value=2.0
+        ),
         "max_output_tokens": _env_int("GEMINI_MAX_OUTPUT_TOKENS", 220, min_value=64),
     }
 
@@ -81,7 +88,9 @@ def _build_bedrock_llm(model: str) -> aws.LLM:
     kwargs: dict[str, Any] = {
         "model": model,
         "region": os.getenv("AWS_BEDROCK_REGION", "us-east-1"),
-        "temperature": _env_float("BEDROCK_TEMPERATURE", 0.35, min_value=0.0, max_value=1.0),
+        "temperature": _env_float(
+            "BEDROCK_TEMPERATURE", 0.35, min_value=0.0, max_value=1.0
+        ),
         "max_output_tokens": _env_int("BEDROCK_MAX_OUTPUT_TOKENS", 220, min_value=64),
     }
     if _env_bool("BEDROCK_LATENCY_OPTIMIZED", True):

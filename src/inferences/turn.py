@@ -10,7 +10,11 @@ _DEFAULT_TURN_DETECTION = object()
 
 
 def _interruption_mode() -> str:
-    mode = os.getenv("INTERRUPTION_MODE", "vad").strip().lower()
+    # Default to "adaptive": LiveKit's barge-in model tells genuine interruptions
+    # apart from backchannel ("okay", "right", "uh-huh") so short acknowledgements
+    # don't cut the agent off. It needs aligned-transcript STT (Deepgram provides
+    # this) and LiveKit Cloud inference; otherwise it falls back to VAD on its own.
+    mode = os.getenv("INTERRUPTION_MODE", "adaptive").strip().lower()
     if mode in {"adaptive", "vad"}:
         return mode
     return "vad"

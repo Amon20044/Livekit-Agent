@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 import smtplib
 import ssl
 import time
@@ -12,6 +13,63 @@ from livekit.agents import RunContext, function_tool, get_job_context
 from redis import Redis
 
 logger = logging.getLogger(__name__)
+
+# Basic, deliberately permissive email shape check. We are guarding against
+# obviously-broken transcripts ("amon at gmail dot com" left unconverted, missing
+# domains, stray spaces), not enforcing the full RFC.
+_EMAIL_RE = re.compile(r"^[a-z0-9!#$%&'*+/=?^_`{|}~.-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+$")
+
+# Spoken-symbol words, longest first so "at the rate" wins over "at".
+_SPOKEN_EMAIL_SUBSTITUTIONS = (
+    (r"\bat the rate(?: of)?\b", "@"),
+    (r"\bunderscore\b", "_"),
+    (r"\b(?:dash|hyphen|minus)\b", "-"),
+    (r"\bplus\b", "+"),
+    (r"\bdot\b", "."),
+    (r"\bat\b", "@"),
+)
+
+
+def normalize_spoken_email(raw: str) -> str:
+    """Turn a spoken/typed email into a canonical address.
+
+    Converts dictated symbols ("amon at gmail dot com" -> "amon@gmail.com"),
+    drops the spaces speech-to-text sprinkles in, and lowercases. Returns the
+    best-effort result; callers should validate with `is_valid_email`.
+    """
+    if not raw:
+        return ""
+
+    text = raw.strip().lower()
+    for pattern, replacement in _SPOKEN_EMAIL_SUBSTITUTIONS:
+        text = re.sub(pattern, f" {replacement} ", text)
+
+    text = re.sub(r"\s+", "", text)
+    # Collapse separators that spacing/substitution may have duplicated.
+    text = re.sub(r"@{2,}", "@", text)
+    text = re.sub(r"\.{2,}", ".", text)
+    return text.strip(".")
+
+
+def is_valid_email(email: str) -> bool:
+    return bool(_EMAIL_RE.match((email or "").strip()))
+
+
+def normalize_phone(raw: str) -> str:
+    """Reduce a dictated/typed phone number to digits, preserving a leading +."""
+    if not raw:
+        return ""
+
+    text = raw.strip().lower().replace("plus", "+")
+    keep_plus = text.lstrip().startswith("+")
+    digits = re.sub(r"\D", "", text)
+    return f"+{digits}" if keep_plus and digits else digits
+
+
+def is_valid_phone(phone: str) -> bool:
+    digits = re.sub(r"\D", "", phone or "")
+    # E.164 allows up to 15 digits; 7 is a safe lower bound for a real number.
+    return 7 <= len(digits) <= 15
 
 
 def _clean_env(name: str) -> str | None:
@@ -116,11 +174,22 @@ def _smtp_config() -> dict[str, str | int]:
     }
 
 
+def company_name() -> str:
+    return _clean_env("COMPANY_NAME") or "DreamLaunch Studio"
+
+
+def company_website() -> str:
+    return _clean_env("COMPANY_WEBSITE") or "https://dreamlaunch.studio"
+
+
 def _email_body(lead: dict[str, str | None]) -> str:
+    company = company_name()
+    website = company_website()
+    booking_url = _clean_env("DREAMLAUNCH_BOOKING_URL") or website
     company_line = f"Company: {lead.get('company') or 'Not provided'}"
     return f"""Hi {lead["name"]},
 
-Thanks for calling DreamLaunch Studio. Here is the brief I captured:
+Thanks for calling {company}. Here is the brief I captured:
 
 Name: {lead["name"]}
 Email: {lead["email"]}
@@ -128,12 +197,12 @@ Email: {lead["email"]}
 Reason for meeting: {lead["reason_for_meet"]}
 
 Next step:
-Book a DreamLaunch strategy call here: {_clean_env("DREAMLAUNCH_BOOKING_URL") or "https://dreamlaunch.studio"}
+Book a strategy call here: {booking_url}
 
 We will use this brief to prepare the conversation and keep the first call focused.
 
-DreamLaunch Studio
-https://dreamlaunch.studio
+{company}
+{website}
 """
 
 
@@ -141,7 +210,7 @@ def send_dreamlaunch_recap_email(lead: dict[str, str | None]) -> None:
     smtp_config = _smtp_config()
 
     message = EmailMessage()
-    message["Subject"] = "Your DreamLaunch Studio brief and booking link"
+    message["Subject"] = f"Your {company_name()} brief and booking link"
     message["From"] = str(smtp_config["sender"])
     message["To"] = str(lead["email"])
     message["Reply-To"] = str(smtp_config["reply_to"])
@@ -205,6 +274,14 @@ async def send_confirmed_lead_email_and_save(
     if not email_confirmed:
         return "Do not send email. Caller has not confirmed permission."
 
+    email = normalize_spoken_email(email)
+    if not is_valid_email(email):
+        return (
+            "Do not send email yet. The captured address looks malformed. Ask the "
+            "caller to type it in the chat, or spell it out slowly, then read it "
+            "back to confirm before trying again."
+        )
+
     room_name = _get_room_name(context)
     caller_number = _get_caller_number_from_room(context)
     lead_for_email = {
@@ -227,7 +304,8 @@ async def send_confirmed_lead_email_and_save(
     )
 
     speech = context.session.say(
-        "Done. I have sent the recap and booking link to your email. Thanks for calling DreamLaunch Studio.",
+        "Done. I have sent the recap and booking link to your email. "
+        f"Thanks for calling {company_name()}.",
         allow_interruptions=False,
         add_to_chat_ctx=True,
     )

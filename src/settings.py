@@ -12,6 +12,11 @@ LIVEKIT_API_KEY = os.getenv("LIVEKIT_API_KEY")
 LIVEKIT_API_SECRET = os.getenv("LIVEKIT_API_SECRET")
 AGENT_NAME = os.getenv("LIVEKIT_AGENT_NAME", "my-agent")
 
+# Brand identity. Configurable so one codebase can serve many studios; defaults
+# keep the bundled DreamLaunch Studio reference agent working out of the box.
+COMPANY_NAME = os.getenv("COMPANY_NAME", "DreamLaunch Studio")
+COMPANY_WEBSITE = os.getenv("COMPANY_WEBSITE", "https://dreamlaunch.studio")
+
 # Provider API keys
 deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
 google_api_key = os.getenv("GOOGLE_API_KEY")
