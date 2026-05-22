@@ -18,7 +18,16 @@ from livekit.agents import (
     llm,
     room_io,
 )
-from livekit.plugins import ai_coustics, deepgram, elevenlabs, google, sarvam, silero
+from livekit.plugins import (
+    ai_coustics,
+    aws,
+    deepgram,
+    elevenlabs,
+    google,
+    groq,
+    sarvam,
+    silero,
+)
 from livekit.plugins.turn_detector.english import EnglishModel
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
@@ -68,6 +77,7 @@ deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
 google_api_key = os.getenv("GOOGLE_API_KEY")
 elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY") or os.getenv("ELEVEN_API_KEY")
 sarvam_api_key = os.getenv("SARVAM_API_KEY")
+groq_api_key = os.getenv("GROQ_API_KEY")
 
 # Model config
 deepgram_model = os.getenv("DEEPGRAM_STT_MODEL", "nova-3")
@@ -79,6 +89,17 @@ gemini_model = os.getenv("GEMINI_LLM_MODEL", "gemini-2.5-flash-lite")
 gemini_thinking_level = os.getenv("GEMINI_THINKING_LEVEL", "low")
 gemini_thinking_budget = os.getenv("GEMINI_THINKING_BUDGET", "-1")
 gemini_fallback_model = os.getenv("GEMINI_FALLBACK_LLM_MODEL", "gemini-2.5-flash")
+
+# AWS Bedrock config (used when LLM_PROVIDER=aws). Amazon Nova models are the most
+# broadly accessible default; Claude models additionally require enabling model
+# access and a US cross-region inference profile (us.anthropic.claude-...) and are
+# the ones that support Bedrock latency-optimized inference.
+bedrock_model = os.getenv("AWS_BEDROCK_LLM_MODEL", "amazon.nova-lite-v1:0")
+bedrock_region = os.getenv("AWS_BEDROCK_REGION", "us-east-1")
+
+# Groq config (used when LLM_PROVIDER=groq). Groq's very high throughput makes it
+# a strong low-latency choice; llama-3.1-8b-instant is the fastest default.
+groq_model = os.getenv("GROQ_LLM_MODEL", "llama-3.1-8b-instant")
 
 
 def _money(value: float) -> str:
@@ -301,7 +322,17 @@ def _build_llm_kwargs(model: str) -> dict[str, Any]:
     return kwargs
 
 
-def _build_llm(model: str) -> llm.LLM:
+def _llm_provider() -> str:
+    match os.getenv("LLM_PROVIDER", "google").strip().lower():
+        case "aws" | "bedrock":
+            return "bedrock"
+        case "groq":
+            return "groq"
+        case _:
+            return "google"
+
+
+def _build_google_llm(model: str) -> llm.LLM:
     primary = google.LLM(**_build_llm_kwargs(model))
 
     if not _env_bool("GEMINI_FALLBACK_ENABLED", True):
@@ -324,6 +355,55 @@ def _build_llm(model: str) -> llm.LLM:
             "GEMINI_FALLBACK_RETRY_INTERVAL", 0.2, min_value=0.0, max_value=5.0
         ),
     )
+
+
+class _LatencyOptimizedBedrockLLM(aws.LLM):
+    """``aws.LLM`` that requests Bedrock latency-optimized inference.
+
+    The plugin (v1.5) exposes no hook for the top-level Converse
+    ``performanceConfig`` field, so we inject it into the stream options after
+    ``chat()`` builds them but before the request is sent. Mutation is safe
+    because nothing awaits between ``chat()`` returning and this assignment, so
+    the stream's ``_run`` coroutine cannot have read the options yet.
+    """
+
+    def chat(self, **kwargs: Any) -> llm.LLMStream:
+        stream = super().chat(**kwargs)
+        stream._opts["performanceConfig"] = {"latency": "optimized"}
+        return stream
+
+
+def _build_bedrock_llm(model: str) -> aws.LLM:
+    kwargs: dict[str, Any] = {
+        "model": model,
+        "region": bedrock_region,
+        "temperature": _env_float(
+            "BEDROCK_TEMPERATURE", 0.35, min_value=0.0, max_value=1.0
+        ),
+        "max_output_tokens": _env_int("BEDROCK_MAX_OUTPUT_TOKENS", 220, min_value=64),
+    }
+    if _env_bool("BEDROCK_LATENCY_OPTIMIZED", True):
+        return _LatencyOptimizedBedrockLLM(**kwargs)
+    return aws.LLM(**kwargs)
+
+
+def _build_groq_llm(model: str) -> groq.LLM:
+    return groq.LLM(
+        model=model,
+        api_key=groq_api_key,
+        temperature=_env_float("GROQ_TEMPERATURE", 0.35, min_value=0.0, max_value=2.0),
+        max_completion_tokens=_env_int("GROQ_MAX_OUTPUT_TOKENS", 220, min_value=64),
+    )
+
+
+def _build_llm(model: str) -> llm.LLM:
+    match _llm_provider():
+        case "bedrock":
+            return _build_bedrock_llm(model)
+        case "groq":
+            return _build_groq_llm(model)
+        case _:
+            return _build_google_llm(model)
 
 
 def _build_turn_handling_options(
@@ -581,7 +661,13 @@ async def entrypoint(ctx: JobContext):
     tts_provider = _tts_provider(use_elevenlabs)
     stt_language = _deepgram_language(use_elevenlabs)
     stt_model = _plugin_model(deepgram_model, "deepgram")
-    llm_model = _plugin_model(gemini_model, "google")
+    llm_provider = _llm_provider()
+    if llm_provider == "bedrock":
+        llm_model = bedrock_model.strip()
+    elif llm_provider == "groq":
+        llm_model = _plugin_model(groq_model, "groq")
+    else:
+        llm_model = _plugin_model(gemini_model, "google")
     tts_model = _plugin_model(
         os.getenv("ELEVENLABS_TTS_MODEL", "eleven_flash_v2_5")
         if use_elevenlabs
@@ -596,9 +682,10 @@ async def entrypoint(ctx: JobContext):
     tts_voice = elevenlabs_voice_id if use_elevenlabs else sarvam_speaker
 
     logger.info(
-        "Starting low-latency voice pipeline with stt=%s:%s llm=%s tts_provider=%s tts=%s:%s voice=%s",
+        "Starting low-latency voice pipeline with stt=%s:%s llm=%s:%s tts_provider=%s tts=%s:%s voice=%s",
         stt_model,
         stt_language,
+        llm_provider,
         llm_model,
         tts_provider,
         tts_model,

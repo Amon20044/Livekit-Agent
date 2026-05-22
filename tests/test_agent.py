@@ -8,6 +8,8 @@ from agent import (
     AnchorVoiceAgent,
     BuiltinAudioClip,
     _build_background_audio_player,
+    _build_bedrock_llm,
+    _build_groq_llm,
     _build_llm,
     _build_llm_kwargs,
     _build_tts,
@@ -19,10 +21,13 @@ from agent import (
     _env_float,
     _env_int,
     _format_cost_summary,
+    _llm_provider,
     _loggable_costs,
     _plugin_model,
     _session_costs,
+    aws,
     elevenlabs,
+    groq,
     llm,
     sarvam,
 )
@@ -176,6 +181,7 @@ def test_gemini_25_defaults_to_fast_thinking_and_compact_output(monkeypatch) -> 
 
 
 def test_llm_uses_fallback_adapter_by_default(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "google")
     monkeypatch.delenv("GEMINI_FALLBACK_ENABLED", raising=False)
     monkeypatch.delenv("GEMINI_FALLBACK_LLM_MODEL", raising=False)
 
@@ -185,11 +191,85 @@ def test_llm_uses_fallback_adapter_by_default(monkeypatch) -> None:
 
 
 def test_llm_fallback_can_be_disabled(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "google")
     monkeypatch.setenv("GEMINI_FALLBACK_ENABLED", "false")
 
     model = _build_llm("gemini-2.5-flash-lite")
 
     assert not isinstance(model, llm.FallbackAdapter)
+
+
+def test_llm_provider_switch_maps_aliases(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "google")
+    assert _llm_provider() == "google"
+
+    monkeypatch.setenv("LLM_PROVIDER", "aws")
+    assert _llm_provider() == "bedrock"
+
+    monkeypatch.setenv("LLM_PROVIDER", "BEDROCK")
+    assert _llm_provider() == "bedrock"
+
+    monkeypatch.setenv("LLM_PROVIDER", "groq")
+    assert _llm_provider() == "groq"
+
+    monkeypatch.setenv("LLM_PROVIDER", "GROQ")
+    assert _llm_provider() == "groq"
+
+    monkeypatch.setenv("LLM_PROVIDER", "unknown")
+    assert _llm_provider() == "google"
+
+
+def test_build_llm_switches_to_bedrock_when_selected(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "aws")
+    monkeypatch.setenv("BEDROCK_LATENCY_OPTIMIZED", "false")
+
+    model = _build_llm("amazon.nova-micro-v1:0")
+
+    assert isinstance(model, aws.LLM)
+    assert model.model == "amazon.nova-micro-v1:0"
+
+
+def test_bedrock_latency_optimized_toggle(monkeypatch) -> None:
+    monkeypatch.setenv("BEDROCK_LATENCY_OPTIMIZED", "true")
+    optimized = _build_bedrock_llm("us.anthropic.claude-3-5-haiku-20241022-v1:0")
+    assert isinstance(optimized, agent_module._LatencyOptimizedBedrockLLM)
+
+    monkeypatch.setenv("BEDROCK_LATENCY_OPTIMIZED", "false")
+    plain = _build_bedrock_llm("amazon.nova-micro-v1:0")
+    assert isinstance(plain, aws.LLM)
+    assert not isinstance(plain, agent_module._LatencyOptimizedBedrockLLM)
+
+
+def test_latency_optimized_injects_performance_config(monkeypatch) -> None:
+    monkeypatch.setattr(
+        aws.LLM, "chat", lambda self, **kwargs: SimpleNamespace(_opts={})
+    )
+
+    optimized = agent_module._LatencyOptimizedBedrockLLM(model="amazon.nova-micro-v1:0")
+    stream = optimized.chat(chat_ctx=None)
+
+    assert stream._opts["performanceConfig"] == {"latency": "optimized"}
+
+
+def test_build_llm_switches_to_groq_when_selected(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "groq")
+    monkeypatch.setattr(agent_module, "groq_api_key", "test-key")
+
+    model = _build_llm("llama-3.1-8b-instant")
+
+    assert isinstance(model, groq.LLM)
+    assert model.model == "llama-3.1-8b-instant"
+
+
+def test_build_groq_llm_applies_fast_defaults(monkeypatch) -> None:
+    monkeypatch.setattr(agent_module, "groq_api_key", "test-key")
+    monkeypatch.delenv("GROQ_MAX_OUTPUT_TOKENS", raising=False)
+    monkeypatch.delenv("GROQ_TEMPERATURE", raising=False)
+
+    model = _build_groq_llm("llama-3.1-8b-instant")
+
+    assert isinstance(model, groq.LLM)
+    assert model.model == "llama-3.1-8b-instant"
 
 
 @pytest.mark.asyncio
