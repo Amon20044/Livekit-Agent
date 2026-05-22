@@ -2,34 +2,32 @@ from types import SimpleNamespace
 
 import pytest
 
-import agent as agent_module
-from agent import (
-    INITIAL_GREETING_INSTRUCTIONS,
-    AnchorVoiceAgent,
-    BuiltinAudioClip,
-    _build_background_audio_player,
+from app import agent_session as agent_module
+from app.agent_session import AnchorVoiceAgent
+from audio.background import _build_background_audio_player
+from core.env import _env_bool, _env_float, _env_int, _plugin_model
+from inferences import llm as llm_module
+from inferences import tts as tts_module
+from inferences import voice as voice_module
+from inferences.llm import (
+    _LatencyOptimizedBedrockLLM,
     _build_bedrock_llm,
     _build_groq_llm,
     _build_llm,
     _build_llm_kwargs,
-    _build_tts,
-    _build_turn_detector,
-    _build_turn_handling_options,
-    _cost_delta,
-    _deepgram_language,
-    _env_bool,
-    _env_float,
-    _env_int,
-    _format_cost_summary,
     _llm_provider,
+)
+from inferences.turn import _build_turn_handling_options
+from inferences.tts import _build_tts
+from inferences.voice import _build_turn_detector, _deepgram_language
+from livekit.agents import BuiltinAudioClip, llm
+from livekit.plugins import aws, elevenlabs, groq, sarvam
+from prompts.instructions import INITIAL_GREETING_INSTRUCTIONS
+from telemetry.costs import (
+    _cost_delta,
+    _format_cost_summary,
     _loggable_costs,
-    _plugin_model,
     _session_costs,
-    aws,
-    elevenlabs,
-    groq,
-    llm,
-    sarvam,
 )
 from tools import search_ai_mode, search_latest_news
 
@@ -137,7 +135,7 @@ def test_turn_handling_defaults_to_multilingual_detector(monkeypatch) -> None:
     class FakeMultilingualModel:
         pass
 
-    monkeypatch.setattr(agent_module, "MultilingualModel", FakeMultilingualModel)
+    monkeypatch.setattr(voice_module, "MultilingualModel", FakeMultilingualModel)
     monkeypatch.setenv("USE_EL", "false")
 
     options = _build_turn_handling_options()
@@ -151,7 +149,7 @@ def test_use_el_defaults_speech_stack_to_english(monkeypatch) -> None:
 
     monkeypatch.setenv("USE_EL", "true")
     monkeypatch.delenv("DEEPGRAM_STT_LANGUAGE", raising=False)
-    monkeypatch.setattr(agent_module, "EnglishModel", FakeEnglishModel)
+    monkeypatch.setattr(voice_module, "EnglishModel", FakeEnglishModel)
 
     assert _deepgram_language() == "en"
     assert isinstance(_build_turn_detector(), FakeEnglishModel)
@@ -163,7 +161,7 @@ def test_sarvam_defaults_speech_stack_to_multilingual(monkeypatch) -> None:
 
     monkeypatch.setenv("USE_EL", "false")
     monkeypatch.delenv("DEEPGRAM_STT_LANGUAGE", raising=False)
-    monkeypatch.setattr(agent_module, "MultilingualModel", FakeMultilingualModel)
+    monkeypatch.setattr(voice_module, "MultilingualModel", FakeMultilingualModel)
 
     assert _deepgram_language() == "multi"
     assert isinstance(_build_turn_detector(), FakeMultilingualModel)
@@ -232,12 +230,12 @@ def test_build_llm_switches_to_bedrock_when_selected(monkeypatch) -> None:
 def test_bedrock_latency_optimized_toggle(monkeypatch) -> None:
     monkeypatch.setenv("BEDROCK_LATENCY_OPTIMIZED", "true")
     optimized = _build_bedrock_llm("us.anthropic.claude-3-5-haiku-20241022-v1:0")
-    assert isinstance(optimized, agent_module._LatencyOptimizedBedrockLLM)
+    assert isinstance(optimized, _LatencyOptimizedBedrockLLM)
 
     monkeypatch.setenv("BEDROCK_LATENCY_OPTIMIZED", "false")
     plain = _build_bedrock_llm("amazon.nova-micro-v1:0")
     assert isinstance(plain, aws.LLM)
-    assert not isinstance(plain, agent_module._LatencyOptimizedBedrockLLM)
+    assert not isinstance(plain, _LatencyOptimizedBedrockLLM)
 
 
 def test_latency_optimized_injects_performance_config(monkeypatch) -> None:
@@ -245,7 +243,7 @@ def test_latency_optimized_injects_performance_config(monkeypatch) -> None:
         aws.LLM, "chat", lambda self, **kwargs: SimpleNamespace(_opts={})
     )
 
-    optimized = agent_module._LatencyOptimizedBedrockLLM(model="amazon.nova-micro-v1:0")
+    optimized = _LatencyOptimizedBedrockLLM(model="amazon.nova-micro-v1:0")
     stream = optimized.chat(chat_ctx=None)
 
     assert stream._opts["performanceConfig"] == {"latency": "optimized"}
@@ -253,7 +251,7 @@ def test_latency_optimized_injects_performance_config(monkeypatch) -> None:
 
 def test_build_llm_switches_to_groq_when_selected(monkeypatch) -> None:
     monkeypatch.setenv("LLM_PROVIDER", "groq")
-    monkeypatch.setattr(agent_module, "groq_api_key", "test-key")
+    monkeypatch.setattr(llm_module, "groq_api_key", "test-key")
 
     model = _build_llm("llama-3.1-8b-instant")
 
@@ -262,7 +260,7 @@ def test_build_llm_switches_to_groq_when_selected(monkeypatch) -> None:
 
 
 def test_build_groq_llm_applies_fast_defaults(monkeypatch) -> None:
-    monkeypatch.setattr(agent_module, "groq_api_key", "test-key")
+    monkeypatch.setattr(llm_module, "groq_api_key", "test-key")
     monkeypatch.delenv("GROQ_MAX_OUTPUT_TOKENS", raising=False)
     monkeypatch.delenv("GROQ_TEMPERATURE", raising=False)
 
@@ -277,8 +275,8 @@ async def test_use_el_builds_optimized_elevenlabs_english_tts(monkeypatch) -> No
     monkeypatch.setenv("USE_EL", "true")
     monkeypatch.delenv("ELEVENLABS_TTS_MODEL", raising=False)
     monkeypatch.delenv("ELEVENLABS_TTS_LANGUAGE", raising=False)
-    monkeypatch.setattr(agent_module, "elevenlabs_api_key", "test-key")
-    monkeypatch.setattr(agent_module, "elevenlabs_voice_id", "test-voice")
+    monkeypatch.setattr(tts_module, "elevenlabs_api_key", "test-key")
+    monkeypatch.setattr(tts_module, "elevenlabs_voice_id", "test-voice")
 
     tts = _build_tts()
 
