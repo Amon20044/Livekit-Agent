@@ -345,14 +345,16 @@ def test_caller_number_from_room_reads_sip_identity() -> None:
         identity = "sip_+918200962735"
 
     class FakeRoom:
-        remote_participants = {"caller": FakeParticipant()}
+        def __init__(self) -> None:
+            self.remote_participants = {"caller": FakeParticipant()}
 
     assert dreamlaunch.caller_number_from_room(FakeRoom()) == "+918200962735"
 
 
 def test_caller_number_from_room_handles_no_participants() -> None:
     class FakeRoom:
-        remote_participants = {}
+        def __init__(self) -> None:
+            self.remote_participants = {}
 
     assert dreamlaunch.caller_number_from_room(FakeRoom()) is None
 

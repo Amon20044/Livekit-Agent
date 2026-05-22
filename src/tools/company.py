@@ -154,9 +154,7 @@ def _caller_memory_ttl_seconds() -> int:
     try:
         return max(3_600, int(raw_value))
     except ValueError:
-        logger.warning(
-            "Invalid CALLER_MEMORY_TTL_SECONDS=%r; using 2592000", raw_value
-        )
+        logger.warning("Invalid CALLER_MEMORY_TTL_SECONDS=%r; using 2592000", raw_value)
         return 2_592_000
 
 

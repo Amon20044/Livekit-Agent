@@ -61,7 +61,9 @@ class AnchorVoiceAgent(Agent):
 
     async def on_enter(self) -> None:
         userdata = getattr(self.session, "userdata", None)
-        record = userdata.get("returning_caller") if isinstance(userdata, dict) else None
+        record = (
+            userdata.get("returning_caller") if isinstance(userdata, dict) else None
+        )
         await self.session.generate_reply(
             instructions=build_returning_greeting(record),
             allow_interruptions=True,

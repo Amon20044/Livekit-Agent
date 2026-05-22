@@ -35,7 +35,8 @@ These are the caller-facing features — what someone actually experiences when 
 |---|---|
 | 🗣️ **Natural multilingual conversation** | Speaks Hindi by default and switches to the caller's language mid-sentence — no robotic "please select a language." |
 | ⚡ **Sub-second responsiveness** | Tuned end-to-end for "first useful audio" — interim transcripts, preemptive generation, and streaming TTS mean replies start almost immediately. |
-| 🤫 **Smart interruption handling** | Powered by **adaptive barge-in detection**: backchannel like *"okay," "right," "uh-huh"* no longer cuts the agent off — only genuine interruptions do. |
+| 🤫 **Smart interruption handling** | Single-word backchannel like *"okay," "right," "uh-huh"* no longer cuts the agent off — interrupting takes a real, multi-word utterance. Upgradable to LiveKit Cloud's adaptive barge-in model. |
+| 🧠 **Remembers returning callers** | On phone calls, a caller is recognized by number — greeted by name if they finished before, or offered to pick up where they left off if they didn't. |
 | 📧 **Reliable email & phone capture** | Callers can **type** their email/phone into the chat, **say** it slowly, or **enter it on the keypad** — and the agent always **reads it back to confirm.** |
 | 🔢 **Keypad (DTMF) entry** | On phone calls, callers punch in their number on the dial pad and press `#`. No more spelling out ten digits over a noisy line. |
 | ✅ **Confirm-before-commit** | The agent summarizes everything it captured and asks permission before sending anything. Malformed emails are caught and re-collected, never silently sent. |
@@ -151,10 +152,16 @@ Woice is tuned for a fast, lively voice experience and is controlled almost enti
 
 ```env
 # Turn-taking & interruptions
-INTERRUPTION_MODE=adaptive        # adaptive | vad  — adaptive ignores backchannel ("okay")
+INTERRUPTION_MODE=vad             # vad | adaptive  — adaptive barge-in needs LiveKit Cloud
+MIN_INTERRUPTION_WORDS=2          # words required to interrupt; filters "okay"/"right" backchannel
 MIN_ENDPOINTING_DELAY=0.22        # how soon the agent may answer after a pause
 MAX_ENDPOINTING_DELAY=0.9         # cap on how long it waits when unsure
 ENDPOINTING_MODE=dynamic
+
+# Brand (one codebase, many studios) + caller memory
+COMPANY_NAME=DreamLaunch Studio
+COMPANY_WEBSITE=https://dreamlaunch.studio
+CALLER_MEMORY_TTL_SECONDS=2592000  # how long a returning caller is remembered (30 days)
 
 # Speech recognition
 DEEPGRAM_STT_MODEL=nova-3-general
@@ -167,7 +174,7 @@ GEMINI_THINKING_BUDGET=0
 GEMINI_MAX_OUTPUT_TOKENS=220
 ```
 
-> **Adaptive interruption note:** the barge-in model runs on LiveKit Cloud's inference and needs an aligned-transcript STT (Deepgram qualifies). It's free and unlimited on LiveKit Cloud, with a monthly free tier in dev. If it isn't available (e.g. a self-hosted production worker), it automatically falls back to VAD — so setting `adaptive` is always safe.
+> **Interruption modes:** the default `vad` works everywhere and filters single-word backchannel via `MIN_INTERRUPTION_WORDS`. The smarter `adaptive` barge-in model runs on **LiveKit Cloud** inference (needs aligned-transcript STT — Deepgram qualifies). On a self-hosted server it returns `401` and falls back to VAD after a few noisy retries, so keep `vad` unless you deploy on LiveKit Cloud.
 
 ### Latency presets
 

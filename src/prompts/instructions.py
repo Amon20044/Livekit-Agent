@@ -89,6 +89,7 @@ def build_agent_instructions(use_elevenlabs: bool) -> str:
 - Keep name, email, company, and reason for meeting in conversation context during the call.
 - As you learn each detail, call note_lead_progress so the caller can resume if they reconnect later. This only updates in-memory notes; it saves nothing during the call.
 - If the caller is returning, confirm the details you already have instead of asking for them again.
+- Do not save anything to Redis while the call is active.
 - Do not mention Redis, SMTP, tooling, or internal storage to the caller.
 
 # Capturing email and phone (important)
