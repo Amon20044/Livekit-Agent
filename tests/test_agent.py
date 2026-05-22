@@ -34,21 +34,12 @@ def test_anchor_agent_is_search_focused_and_has_serpapi_tools(monkeypatch) -> No
 
     agent = AnchorVoiceAgent()
 
-    assert "Anchor" in agent.instructions
-    assert "Speak in Hindi by default" in agent.instructions
-    assert "natural conversational Hindi" in agent.instructions
-    assert "latest news" in agent.instructions
+    assert "Veena" in agent.instructions
+    assert "Hindi by default" in agent.instructions
+    assert "search_latest_news" in agent.instructions
     assert "search_ai_mode" in agent.instructions
-    assert "India-specific factual questions" in agent.instructions
-    assert "Indian city" in agent.instructions
-    assert "warm, human touch" in agent.instructions
-    assert "ask what name you" in agent.instructions
-    assert "avoid sounding clipped" in agent.instructions
-    assert "Yes, sure, let me search that for you" not in agent.instructions
-    assert "The tool itself says one short acknowledgement exactly once" in (
-        agent.instructions
-    )
-    assert "let the background thinking" in agent.instructions
+    # The agent must stay silent during tool calls (no spoken "let me search").
+    assert 'Do NOT say "let me search"' in agent.instructions
     assert agent.tools == [search_latest_news, search_ai_mode]
 
 
@@ -76,8 +67,8 @@ async def test_anchor_agent_greets_and_asks_for_name_on_enter(monkeypatch) -> No
             "allow_interruptions": True,
         }
     ]
-    assert "ask what name you should call them" in INITIAL_GREETING_INSTRUCTIONS
-    assert "one or two short spoken sentences" in INITIAL_GREETING_INSTRUCTIONS
+    assert "ask what to call them" in INITIAL_GREETING_INSTRUCTIONS
+    assert "Veena" in INITIAL_GREETING_INSTRUCTIONS
 
 
 def test_anchor_agent_uses_english_language_defaults_with_elevenlabs(
@@ -87,8 +78,8 @@ def test_anchor_agent_uses_english_language_defaults_with_elevenlabs(
 
     agent = AnchorVoiceAgent()
 
-    assert "Speak in English by default" in agent.instructions
-    assert "Speak in Hindi by default" not in agent.instructions
+    assert "English by default" in agent.instructions
+    assert "Hindi by default" not in agent.instructions
     assert agent.tools == [search_latest_news, search_ai_mode]
 
 
@@ -173,14 +164,15 @@ def test_sarvam_defaults_speech_stack_to_multilingual(monkeypatch) -> None:
     assert isinstance(_build_turn_detector(), FakeMultilingualModel)
 
 
-def test_gemini_25_defaults_to_dynamic_thinking_and_roomy_output(monkeypatch) -> None:
+def test_gemini_25_defaults_to_fast_thinking_and_compact_output(monkeypatch) -> None:
     monkeypatch.delenv("GEMINI_THINKING_BUDGET", raising=False)
     monkeypatch.delenv("GEMINI_MAX_OUTPUT_TOKENS", raising=False)
 
     kwargs = _build_llm_kwargs("gemini-2.5-flash-lite")
 
-    assert kwargs["thinking_config"] == {"thinking_budget": -1}
-    assert kwargs["max_output_tokens"] == 640
+    # thinking_budget=0 removes the pre-response reasoning delay for voice latency.
+    assert kwargs["thinking_config"] == {"thinking_budget": 0}
+    assert kwargs["max_output_tokens"] == 220
 
 
 def test_llm_uses_fallback_adapter_by_default(monkeypatch) -> None:
@@ -216,7 +208,7 @@ async def test_use_el_builds_optimized_elevenlabs_english_tts(monkeypatch) -> No
     assert tts._opts.voice_id == "test-voice"
     assert tts._opts.streaming_latency == 3
     assert tts._opts.auto_mode is True
-    assert tts._opts.chunk_length_schedule == [50, 80, 120, 160]
+    assert tts._opts.chunk_length_schedule == [50, 70, 100, 140]
     assert tts._opts.sync_alignment is False
     assert tts._opts.voice_settings.stability == 0.45
     assert tts._opts.voice_settings.similarity_boost == 0.75

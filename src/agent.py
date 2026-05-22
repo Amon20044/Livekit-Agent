@@ -34,6 +34,29 @@ INITIAL_GREETING_INSTRUCTIONS = (
 env_file_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env.local")
 load_dotenv(env_file_path)
 
+
+def _configure_log_levels() -> None:
+    """Apply LOG_LEVEL to our and LiveKit's loggers to cut log volume.
+
+    Lower verbosity (e.g. ``warn``) reduces per-turn logging work on the hot
+    path. Levels are set on named loggers so the choice survives whatever the
+    LiveKit CLI configures on the root logger.
+    """
+    levels = {
+        "DEBUG": logging.DEBUG,
+        "INFO": logging.INFO,
+        "WARN": logging.WARNING,
+        "WARNING": logging.WARNING,
+        "ERROR": logging.ERROR,
+        "CRITICAL": logging.CRITICAL,
+    }
+    level = levels.get(os.getenv("LOG_LEVEL", "info").strip().upper(), logging.INFO)
+    for name in ("agent", "tools", "livekit", "livekit.agents"):
+        logging.getLogger(name).setLevel(level)
+
+
+_configure_log_levels()
+
 # LiveKit connection
 LIVEKIT_URL = os.getenv("LIVEKIT_URL", "ws://localhost:7880")
 LIVEKIT_API_KEY = os.getenv("LIVEKIT_API_KEY")
@@ -610,40 +633,6 @@ async def entrypoint(ctx: JobContext):
         user_away_timeout=None,
     )
 
-    pricing = _pricing_config()
-    last_logged_costs = {
-        "deepgram": 0.0,
-        "llm": 0.0,
-        tts_provider: 0.0,
-        "total": 0.0,
-    }
-
-    @session.on("session_usage_updated")
-    def _on_session_usage_updated(ev: SessionUsageUpdatedEvent):
-        nonlocal last_logged_costs
-
-        current_costs = _session_costs(
-            ev.usage,
-            pricing,
-            tts_provider=tts_provider,
-        )
-        delta_costs = _cost_delta(current_costs, last_logged_costs)
-
-        if delta_costs["llm"] == 0.0 and delta_costs[tts_provider] == 0.0:
-            return
-
-        last_logged_costs = current_costs
-
-        logger.info(
-            "Turn cost delta: %s | call total: %s",
-            _format_cost_summary(delta_costs),
-            _format_cost_summary(current_costs),
-            extra={
-                "cost_delta": _loggable_costs(delta_costs),
-                "cost_total": _loggable_costs(current_costs),
-            },
-        )
-
     @session.on("error")
     def _on_error(ev: ErrorEvent):
         error_text = str(ev.error)
@@ -660,19 +649,57 @@ async def entrypoint(ctx: JobContext):
         except RuntimeError:
             logger.warning("Could not speak LLM recovery message; session is closing")
 
-    async def log_usage():
-        final_costs = _session_costs(
-            session.usage,
-            pricing,
-            tts_provider=tts_provider,
-        )
-        logger.info(
-            "Session ended. Final call cost: %s",
-            _format_cost_summary(final_costs),
-            extra={"cost_total": _loggable_costs(final_costs)},
-        )
+    # Cost accounting runs floating-point math and emits a log line on every usage
+    # event, so it stays off the hot path by default. Enable COST_LOGGING_ENABLED
+    # only when you need billing visibility.
+    if _env_bool("COST_LOGGING_ENABLED", False):
+        pricing = _pricing_config()
+        last_logged_costs = {
+            "deepgram": 0.0,
+            "llm": 0.0,
+            tts_provider: 0.0,
+            "total": 0.0,
+        }
 
-    ctx.add_shutdown_callback(log_usage)
+        @session.on("session_usage_updated")
+        def _on_session_usage_updated(ev: SessionUsageUpdatedEvent):
+            nonlocal last_logged_costs
+
+            current_costs = _session_costs(
+                ev.usage,
+                pricing,
+                tts_provider=tts_provider,
+            )
+            delta_costs = _cost_delta(current_costs, last_logged_costs)
+
+            if delta_costs["llm"] == 0.0 and delta_costs[tts_provider] == 0.0:
+                return
+
+            last_logged_costs = current_costs
+
+            logger.info(
+                "Turn cost delta: %s | call total: %s",
+                _format_cost_summary(delta_costs),
+                _format_cost_summary(current_costs),
+                extra={
+                    "cost_delta": _loggable_costs(delta_costs),
+                    "cost_total": _loggable_costs(current_costs),
+                },
+            )
+
+        async def log_usage():
+            final_costs = _session_costs(
+                session.usage,
+                pricing,
+                tts_provider=tts_provider,
+            )
+            logger.info(
+                "Session ended. Final call cost: %s",
+                _format_cost_summary(final_costs),
+                extra={"cost_total": _loggable_costs(final_costs)},
+            )
+
+        ctx.add_shutdown_callback(log_usage)
 
     background_audio = _build_background_audio_player()
 

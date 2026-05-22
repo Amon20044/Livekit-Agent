@@ -4,7 +4,6 @@ import pytest
 from tools import (
     SERPAPI_URL,
     SerpApiError,
-    _announce_search,
     _log_serpapi_client_error,
     _redact_url,
     search_ai_mode,
@@ -65,19 +64,25 @@ async def test_search_ai_mode_reports_missing_api_key(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_search_announcement_only_speaks_once_per_context() -> None:
-    context = _FakeContext()
+async def test_search_tools_do_not_speak_before_searching(monkeypatch) -> None:
+    """Tools must stay silent so the call isn't delayed by a spoken announcement."""
+    monkeypatch.setenv("SERPAPI_API_KEY", "secret")
 
-    await _announce_search(context)
-    await _announce_search(context)
-
-    assert context.session.said == [
-        {
-            "text": "I'll check that now.",
-            "allow_interruptions": False,
-            "add_to_chat_ctx": False,
+    async def fake_serpapi_get(params, timeout_seconds=12):
+        return {
+            "news_results": [{"title": "x"}],
+            "reconstructed_markdown": "x",
         }
-    ]
+
+    monkeypatch.setattr("tools._serpapi_get", fake_serpapi_get)
+
+    news_context = _FakeContext()
+    await search_latest_news._func(news_context, "query")
+    assert news_context.session.said == []
+
+    ai_context = _FakeContext()
+    await search_ai_mode._func(ai_context, "query")
+    assert ai_context.session.said == []
 
 
 def test_redact_url_removes_serpapi_key() -> None:

@@ -18,22 +18,6 @@ def _clean_env(name: str) -> str | None:
     return cleaned or None
 
 
-async def _announce_search(context: RunContext | None) -> None:
-    if context is None:
-        return
-    if getattr(context, "_anchor_search_announced", False):
-        return
-
-    context._anchor_search_announced = True
-
-    handle = context.session.say(
-        "I'll check that now.",
-        allow_interruptions=False,
-        add_to_chat_ctx=False,
-    )
-    await handle.wait_for_playout()
-
-
 async def _serpapi_get(params: dict[str, str], timeout_seconds: int = 12) -> dict:
     timeout = aiohttp.ClientTimeout(total=timeout_seconds)
     async with (
@@ -101,8 +85,6 @@ async def search_latest_news(
     if not api_key:
         return "I can't search live news yet because SERPAPI_API_KEY is not configured."
 
-    await _announce_search(context)
-
     params = {
         "engine": "google_news",
         "q": query,
@@ -169,8 +151,6 @@ async def search_ai_mode(
     api_key = _clean_env("SERPAPI_API_KEY")
     if not api_key:
         return "I can't search Google AI Mode yet because SERPAPI_API_KEY is not configured."
-
-    await _announce_search(context)
 
     params = {
         "engine": "google_ai_mode",
