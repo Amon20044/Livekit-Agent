@@ -289,7 +289,7 @@ Woice today is the **agent runtime** — the hard, reliable voice layer. The vis
 
 > The items below are planned/in-progress, not yet shipped.
 
-- **🧠 Returning-caller memory.** Recognize a caller by phone number on connect, and resume where they left off. New caller → fresh intake. Partial history → *"Welcome back — let's pick up where we stopped."* Completed before → greet them by name and ask if there's anything else. All state persisted in Redis as the source of truth.
+- **🧠 Cross-channel memory.** Phone-based returning-caller recognition **ships today** (recognized by number, resume partial intake, greet completed callers by name, 30-day Redis retention). Next: extend identity to web/app sessions and build richer per-caller history.
 - **📊 Multi-tenant dashboard.** A control plane to spin up and configure agents (persona, voice, language, tools) without touching code, watch **live transcripts**, and browse every captured lead.
 - **📈 Conversation analytics.** Conversion rates, drop-off points, capture success, latency percentiles, and language mix — per agent and per campaign.
 - **🔁 Prompt & voice A/B testing.** Compare personas, voices, and latency presets on live traffic and keep what converts.
