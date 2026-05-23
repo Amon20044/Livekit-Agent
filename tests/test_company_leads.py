@@ -1,9 +1,24 @@
+import asyncio
 import json
 from types import SimpleNamespace
 
 import pytest
 
 from tools import company as woice
+
+
+class FakeKV:
+    """In-memory stand-in for the Redis client used by checkpoint tests."""
+
+    def __init__(self, initial: dict | None = None) -> None:
+        self.store: dict[str, str] = dict(initial or {})
+
+    def get(self, key):
+        return self.store.get(key)
+
+    def set(self, key, value, ex=None):
+        self.store[key] = value
+        return True
 
 
 class FakeRedis:
@@ -495,3 +510,137 @@ async def test_note_lead_progress_accumulates_in_userdata() -> None:
         "email": "amon@gmail.com",
         "company": "Arisyn",
     }
+
+
+def test_upsert_caller_checkpoint_merges_into_existing_record(monkeypatch) -> None:
+    kv = FakeKV()
+    monkeypatch.setattr(woice, "_redis_client", lambda: kv)
+    monkeypatch.setattr(woice.time, "time", lambda: 1710000000)
+
+    first = woice.upsert_caller_checkpoint(phone="+918200962735", name="Amon")
+    assert first["name"] == "Amon"
+    assert first["status"] == "partial"
+    assert first["email"] is None
+
+    # A later checkpoint that only knows the email must NOT erase the name.
+    second = woice.upsert_caller_checkpoint(
+        phone="+918200962735", email="amon@example.com", company="Arisyn"
+    )
+    assert second["name"] == "Amon"
+    assert second["email"] == "amon@example.com"
+    assert second["company"] == "Arisyn"
+    assert second["status"] == "partial"
+    assert second["updated_at"] == 1710000000
+    assert json.loads(kv.store["woice:caller:+918200962735"]) == second
+
+
+def test_upsert_caller_checkpoint_does_not_downgrade_completed(monkeypatch) -> None:
+    kv = FakeKV(
+        {
+            "woice:caller:+918200962735": json.dumps(
+                {"phone": "+918200962735", "status": "completed", "name": "Amon"}
+            )
+        }
+    )
+    monkeypatch.setattr(woice, "_redis_client", lambda: kv)
+
+    record = woice.upsert_caller_checkpoint(
+        phone="+918200962735", status="partial", reason_for_meet="More info"
+    )
+
+    assert record["status"] == "completed"
+    assert record["name"] == "Amon"
+    assert record["reason_for_meet"] == "More info"
+
+
+def test_upsert_caller_checkpoint_skips_without_phone() -> None:
+    assert woice.upsert_caller_checkpoint(phone=None, name="Amon") is None
+    assert woice.upsert_caller_checkpoint(phone="", name="Amon") is None
+
+
+def test_upsert_caller_checkpoint_survives_redis_failure(monkeypatch) -> None:
+    def boom():
+        raise RuntimeError("redis down")
+
+    monkeypatch.setattr(woice, "_redis_client", boom)
+    assert woice.upsert_caller_checkpoint(phone="+918200962735", name="Amon") is None
+
+
+def test_upsert_caller_checkpoint_survives_corrupt_existing_record(monkeypatch) -> None:
+    kv = FakeKV({"woice:caller:+918200962735": "{not valid json"})
+    monkeypatch.setattr(woice, "_redis_client", lambda: kv)
+
+    record = woice.upsert_caller_checkpoint(phone="+918200962735", name="Amon")
+
+    assert record["name"] == "Amon"
+    assert record["status"] == "partial"
+
+
+@pytest.mark.asyncio
+async def test_note_lead_progress_checkpoints_per_number_in_background(
+    monkeypatch,
+) -> None:
+    recorded = []
+
+    def fake_upsert(**kwargs):
+        recorded.append(kwargs)
+        return kwargs
+
+    monkeypatch.setattr(woice, "upsert_caller_checkpoint", fake_upsert)
+
+    userdata = {"caller_phone": "+918200962735", "lead_progress": {}}
+    context = SimpleNamespace(session=SimpleNamespace(userdata=userdata))
+
+    await woice.note_lead_progress._func(
+        context, name="Amon", email="amon at gmail dot com"
+    )
+
+    # The checkpoint runs in a background task; await it to let it finish.
+    tasks = userdata.get("checkpoint_tasks")
+    assert tasks
+    await asyncio.gather(*list(tasks))
+
+    assert recorded == [
+        {
+            "phone": "+918200962735",
+            "status": "partial",
+            "name": "Amon",
+            "email": "amon@gmail.com",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_note_lead_progress_skips_checkpoint_without_phone(monkeypatch) -> None:
+    recorded = []
+    monkeypatch.setattr(
+        woice, "upsert_caller_checkpoint", lambda **kw: recorded.append(kw)
+    )
+
+    userdata = {"lead_progress": {}}
+    context = SimpleNamespace(session=SimpleNamespace(userdata=userdata))
+
+    await woice.note_lead_progress._func(context, name="Amon")
+
+    assert userdata.get("checkpoint_tasks") in (None, set())
+    assert recorded == []
+
+
+@pytest.mark.asyncio
+async def test_note_lead_progress_skips_checkpoint_when_completed(monkeypatch) -> None:
+    recorded = []
+    monkeypatch.setattr(
+        woice, "upsert_caller_checkpoint", lambda **kw: recorded.append(kw)
+    )
+
+    userdata = {
+        "caller_phone": "+918200962735",
+        "lead_progress": {},
+        "lead_completed": True,
+    }
+    context = SimpleNamespace(session=SimpleNamespace(userdata=userdata))
+
+    await woice.note_lead_progress._func(context, name="Amon")
+
+    assert userdata.get("checkpoint_tasks") in (None, set())
+    assert recorded == []

@@ -267,11 +267,11 @@ def test_turn_handling_defaults_are_low_latency(monkeypatch) -> None:
     assert options["endpointing"]["mode"] == "dynamic"
     assert options["endpointing"]["min_delay"] == 0.22
     assert options["endpointing"]["max_delay"] == 0.9
-    # VAD by default (adaptive needs LiveKit Cloud); 2 words required to interrupt
-    # so single-word backchannel ("okay", "right") doesn't cut the agent off.
+    # VAD by default (adaptive needs LiveKit Cloud); 6 words required to interrupt
+    # so backchannel and short fillers (up to 5 words) don't cut the agent off.
     assert options["interruption"]["mode"] == "vad"
     assert options["interruption"]["min_duration"] == 0.5
-    assert options["interruption"]["min_words"] == 2
+    assert options["interruption"]["min_words"] == 6
     assert options["preemptive_generation"]["enabled"] is True
     assert options["preemptive_generation"]["preemptive_tts"] is True
     assert options["preemptive_generation"]["max_speech_duration"] == 2.5
@@ -508,6 +508,11 @@ async def test_use_el_builds_optimized_elevenlabs_english_tts(monkeypatch) -> No
     assert tts._opts.model == "eleven_flash_v2_5"
     assert str(tts._opts.language) == "en"
     assert tts._opts.voice_id == "test-voice"
+    # PCM output (no MP3 decode) and a warm WebSocket are the packet-loss levers.
+    assert tts._opts.encoding == "pcm_24000"
+    assert tts._opts.sample_rate == 24000
+    assert tts._opts.inactivity_timeout == 180
+    assert tts._opts.apply_text_normalization == "auto"
     assert tts._opts.streaming_latency == 3
     assert tts._opts.auto_mode is True
     assert tts._opts.chunk_length_schedule == [50, 70, 100, 140]
@@ -517,6 +522,29 @@ async def test_use_el_builds_optimized_elevenlabs_english_tts(monkeypatch) -> No
     assert tts._opts.voice_settings.speed == 1.08
     assert tts._opts.voice_settings.use_speaker_boost is False
     await tts.aclose()
+
+
+def test_elevenlabs_encoding_defaults_to_pcm_and_validates(monkeypatch) -> None:
+    monkeypatch.delenv("ELEVENLABS_OUTPUT_FORMAT", raising=False)
+    assert tts_module._elevenlabs_encoding() == "pcm_24000"
+
+    monkeypatch.setenv("ELEVENLABS_OUTPUT_FORMAT", "pcm_16000")
+    assert tts_module._elevenlabs_encoding() == "pcm_16000"
+
+    # Unsupported formats fall back to the safe PCM default instead of crashing.
+    monkeypatch.setenv("ELEVENLABS_OUTPUT_FORMAT", "flac_9000")
+    assert tts_module._elevenlabs_encoding() == "pcm_24000"
+
+
+def test_elevenlabs_text_normalization_validates(monkeypatch) -> None:
+    monkeypatch.delenv("ELEVENLABS_TEXT_NORMALIZATION", raising=False)
+    assert tts_module._elevenlabs_text_normalization() == "auto"
+
+    monkeypatch.setenv("ELEVENLABS_TEXT_NORMALIZATION", "off")
+    assert tts_module._elevenlabs_text_normalization() == "off"
+
+    monkeypatch.setenv("ELEVENLABS_TEXT_NORMALIZATION", "loud")
+    assert tts_module._elevenlabs_text_normalization() == "auto"
 
 
 def test_sarvam_tts_uses_multilingual_indian_defaults(monkeypatch) -> None:

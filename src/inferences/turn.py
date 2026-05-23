@@ -48,11 +48,15 @@ def _build_turn_handling_options(
             "min_duration": _env_float(
                 "MIN_INTERRUPTION_DURATION", 0.5, min_value=0.05, max_value=3.0
             ),
-            # Require at least 2 spoken words to interrupt so single-word
-            # backchannel ("okay", "right", "haan", "hmm") doesn't cut the agent
-            # off. Lower to 0/1 for snappier barge-in if responses run long.
+            # Intelligent barge-in gate: VAD + STT keep detecting speech, but the
+            # agent keeps talking through anything up to 5 words and only yields on
+            # the 6th word. This rides over backchannel and short fillers ("okay",
+            # "haan right", "yeah sure got it") that should not cut the agent off,
+            # while still letting a real interruption ("stop, that's not what I
+            # meant") through. Lower MIN_INTERRUPTION_WORDS toward 2-3 if the agent
+            # ever talks over genuine interruptions.
             "min_words": _env_int(
-                "MIN_INTERRUPTION_WORDS", 2, min_value=0, max_value=10
+                "MIN_INTERRUPTION_WORDS", 6, min_value=0, max_value=10
             ),
             "discard_audio_if_uninterruptible": True,
             "false_interruption_timeout": _env_float(

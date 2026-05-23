@@ -27,6 +27,9 @@ from tools.company import (
 from tools.company import (
     send_woice_waitlist_email as send_woice_waitlist_email,
 )
+from tools.company import (
+    upsert_caller_checkpoint as upsert_caller_checkpoint,
+)
 from tools.telephony import (
     get_dialed_phone_number as get_dialed_phone_number,
 )

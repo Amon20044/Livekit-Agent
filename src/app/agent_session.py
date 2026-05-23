@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 
@@ -42,7 +43,11 @@ from tools import (
     note_lead_progress,
     send_confirmed_lead_email_and_save,
 )
-from tools.company import caller_number_from_room, lookup_caller, save_caller_memory
+from tools.company import (
+    caller_number_from_room,
+    lookup_caller,
+    upsert_caller_checkpoint,
+)
 
 logger = logging.getLogger("agent")
 
@@ -202,20 +207,31 @@ async def entrypoint(ctx: JobContext):
             "returning_caller": returning_caller,
             "lead_progress": {},
             "lead_completed": False,
+            "checkpoint_tasks": set(),
         },
     )
 
     register_dtmf_collector(ctx.room, dtmf_collector)
 
     async def persist_caller_memory():
-        # Save once at call end. A completed lead already wrote a "completed"
-        # record, so only persist partial progress for unfinished calls.
+        # Final safety net at call end. Background checkpoints already persist
+        # progress mid-call, so first drain any in-flight checkpoint writes, then
+        # upsert the latest snapshot. A completed lead already wrote a "completed"
+        # record, so only partial progress is persisted here.
+        pending = session.userdata.get("checkpoint_tasks")
+        if pending:
+            await asyncio.gather(*list(pending), return_exceptions=True)
         if not caller_phone or session.userdata.get("lead_completed"):
             return
         progress = session.userdata.get("lead_progress") or {}
         if not progress:
             return
-        save_caller_memory(phone=caller_phone, status="partial", **progress)
+        await asyncio.to_thread(
+            upsert_caller_checkpoint,
+            phone=caller_phone,
+            status="partial",
+            **progress,
+        )
 
     ctx.add_shutdown_callback(persist_caller_memory)
 

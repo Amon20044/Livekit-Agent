@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -225,6 +226,86 @@ def save_caller_memory(
     return record
 
 
+_CHECKPOINT_FIELDS = ("name", "email", "company", "reason_for_meet", "lead_id")
+
+
+def upsert_caller_checkpoint(
+    *,
+    phone: str | None,
+    status: str = "partial",
+    name: str | None = None,
+    email: str | None = None,
+    company: str | None = None,
+    reason_for_meet: str | None = None,
+    lead_id: str | None = None,
+) -> dict[str, Any] | None:
+    """Merge new details into the per-number Redis record (an upsert checkpoint).
+
+    Unlike ``save_caller_memory`` (which overwrites the whole record), this reads
+    the existing record and merges in only the non-empty fields, so a checkpoint
+    that learns just an email never erases a name captured earlier. It is the
+    durability backbone for live calls: every time the agent learns something, the
+    latest snapshot is persisted, so a dropped call, a rate-limited LLM, or a crash
+    still leaves a resumable record keyed by phone number.
+
+    Never raises (Redis must not break a live call) and never downgrades a
+    "completed" lead back to "partial". Returns nothing without a phone number
+    (e.g. web sessions).
+    """
+    if not phone:
+        return None
+
+    try:
+        redis = _redis_client()
+    except Exception:
+        logger.warning("Checkpoint client init failed for %s", phone, exc_info=True)
+        return None
+
+    existing: dict[str, Any] = {}
+    try:
+        raw = redis.get(_caller_key(phone))
+        if raw:
+            loaded = json.loads(raw)
+            if isinstance(loaded, dict):
+                existing = loaded
+    except Exception:
+        # A read failure or corrupt record must not stop us writing a fresh one.
+        logger.warning(
+            "Checkpoint read failed for %s; writing fresh record", phone, exc_info=True
+        )
+
+    incoming = {
+        "name": name,
+        "email": email,
+        "company": company,
+        "reason_for_meet": reason_for_meet,
+        "lead_id": lead_id,
+    }
+
+    record = dict(existing)
+    record["phone"] = phone
+    # Never let a partial checkpoint clobber a finished lead.
+    record["status"] = "completed" if existing.get("status") == "completed" else status
+    for key in _CHECKPOINT_FIELDS:
+        value = incoming.get(key)
+        if value:
+            record[key] = value
+        else:
+            record.setdefault(key, existing.get(key))
+    record["updated_at"] = int(time.time())
+
+    try:
+        redis.set(
+            _caller_key(phone),
+            json.dumps(record),
+            ex=_caller_memory_ttl_seconds(),
+        )
+    except Exception:
+        logger.warning("Checkpoint write failed for %s", phone, exc_info=True)
+        return None
+    return record
+
+
 def _required_env(name: str) -> str:
     value = _clean_env(name)
     if not value:
@@ -434,6 +515,40 @@ def _session_userdata(context: RunContext) -> dict[str, Any] | None:
     return userdata if isinstance(userdata, dict) else None
 
 
+def _schedule_caller_checkpoint(userdata: dict[str, Any] | None):
+    """Fire-and-forget upsert of the per-number checkpoint to Redis.
+
+    Runs the (blocking) Redis write in a worker thread and does not await it, so
+    the live call is never stalled by storage. Because it runs on every detail the
+    agent captures, the most recent snapshot is already persisted before any later
+    failure — a dropped call, a rate-limited LLM, or a crash leaves a resumable
+    record. Returns the scheduled task (or None when there is nothing to persist),
+    which the shutdown hook drains.
+    """
+    if not isinstance(userdata, dict):
+        return None
+
+    phone = userdata.get("caller_phone")
+    progress = userdata.get("lead_progress") or {}
+    if not phone or not progress or userdata.get("lead_completed"):
+        return None
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return None
+
+    task = loop.create_task(
+        asyncio.to_thread(
+            upsert_caller_checkpoint, phone=phone, status="partial", **progress
+        )
+    )
+    tasks = userdata.setdefault("checkpoint_tasks", set())
+    tasks.add(task)
+    task.add_done_callback(tasks.discard)
+    return task
+
+
 @function_tool
 async def note_lead_progress(
     context: RunContext,
@@ -442,12 +557,13 @@ async def note_lead_progress(
     company: str | None = None,
     reason_for_meet: str | None = None,
 ) -> str:
-    """Remember details captured so far this call (in memory only, not saved).
+    """Remember details captured so far this call and checkpoint them in the background.
 
     Call this as you learn the caller's name, email, company, or reason for
-    meeting. If the call ends before completion, this lets a returning caller
-    resume where they left off. It sends nothing and writes nothing to storage
-    during the call.
+    meeting. It updates in-memory notes and, on phone calls, upserts a per-number
+    checkpoint to storage in the background so a returning caller can resume even
+    if this call drops before completion. It sends no email and never blocks the
+    conversation.
     """
     userdata = _session_userdata(context)
     if userdata is None:
@@ -462,6 +578,8 @@ async def note_lead_progress(
         progress["company"] = company
     if reason_for_meet:
         progress["reason_for_meet"] = reason_for_meet
+
+    _schedule_caller_checkpoint(userdata)
     return "Noted."
 
 

@@ -236,7 +236,7 @@ ENDPOINTING_MODE=dynamic
 
 INTERRUPTION_MODE=vad
 MIN_INTERRUPTION_DURATION=0.5
-MIN_INTERRUPTION_WORDS=2
+MIN_INTERRUPTION_WORDS=6
 FALSE_INTERRUPTION_TIMEOUT=2.0
 
 PREEMPTIVE_GENERATION=true
@@ -248,12 +248,46 @@ VAD_MIN_SILENCE_DURATION=0.35
 VAD_PREFIX_PADDING_DURATION=0.45
 VAD_ACTIVATION_THRESHOLD=0.52
 VAD_SAMPLE_RATE=16000
+
+# ElevenLabs (USE_EL=true). PCM output + a warm WebSocket reduce mid-call audio
+# dropouts; see "Audio reliability" below.
+ELEVENLABS_OUTPUT_FORMAT=pcm_24000
+ELEVENLABS_INACTIVITY_TIMEOUT=180
+ELEVENLABS_TEXT_NORMALIZATION=auto
 ```
 
 Speechmatics Smart Turn is hard-coded for STT endpointing. Silero VAD still runs
 in `AgentSession` for voice activity and interruption handling.
 
+`MIN_INTERRUPTION_WORDS=6` is the intelligent barge-in gate: VAD and STT keep
+detecting while the caller speaks, but the agent keeps talking through up to five
+words of backchannel ("okay", "haan right", "yeah sure got it") and only yields on
+the sixth word, so a real interruption still cuts through. Lower it toward 2-3 for
+snappier barge-in if the agent ever talks over genuine interruptions.
+
 For LiveKit Cloud deployments, set `INTERRUPTION_MODE=adaptive` after your Cloud inference credentials are working. The code also defaults enhanced noise cancellation to on for `*.livekit.cloud` URLs.
+
+### Per-number checkpoints
+
+As the agent learns each detail it upserts a background checkpoint to the caller's
+phone-keyed Redis record (`note_lead_progress` runs the write off the event loop, so
+the conversation never blocks). Because the latest snapshot is persisted the moment
+it's captured, a dropped call, a rate-limited LLM, or a crash still leaves a
+resumable lead — and a returning caller is greeted with what was already collected.
+A completed lead is never downgraded to partial. The call-shutdown hook drains any
+in-flight checkpoint and writes a final snapshot as a safety net.
+
+### Audio reliability
+
+ElevenLabs defaults to a low-bitrate `mp3_22050_32` stream. We default to
+`pcm_24000` instead: PCM has no decode stage, so a late or partial frame on the
+streaming socket degrades to a tiny silence rather than stalling the MP3 decoder —
+the usual cause of choppy / "lost packet" audio mid-call. The streaming WebSocket is
+also held open for up to `ELEVENLABS_INACTIVITY_TIMEOUT` seconds (180 max) so a quiet
+stretch doesn't drop the connection and glitch the next reply. Note the
+agent→caller leg is WebRTC/Opus, which already does packet-loss concealment;
+enhanced noise cancellation (on by default for `*.livekit.cloud`) further protects
+that path.
 
 ---
 

@@ -1,3 +1,4 @@
+import logging
 import os
 
 from livekit.plugins import elevenlabs, sarvam
@@ -13,6 +14,64 @@ from settings import (
     sarvam_target_language_code,
 )
 
+logger = logging.getLogger("agent")
+
+# Output formats the ElevenLabs plugin accepts. PCM is preferred for voice agents:
+# it skips the MP3 decode stage, so a late or partial frame on the streaming
+# WebSocket degrades to a tiny silence instead of stalling the decoder (which is
+# what surfaces as "lost packets"/choppy audio mid-call). The plugin default is the
+# low-bitrate "mp3_22050_32"; we default to 24 kHz PCM for clean, robust audio.
+_ELEVENLABS_ENCODINGS = frozenset(
+    {
+        "mp3_22050_32",
+        "mp3_24000_48",
+        "mp3_44100",
+        "mp3_44100_32",
+        "mp3_44100_64",
+        "mp3_44100_96",
+        "mp3_44100_128",
+        "mp3_44100_192",
+        "opus_48000_32",
+        "opus_48000_64",
+        "opus_48000_96",
+        "opus_48000_128",
+        "opus_48000_192",
+        "pcm_8000",
+        "pcm_16000",
+        "pcm_22050",
+        "pcm_24000",
+        "pcm_32000",
+        "pcm_44100",
+        "pcm_48000",
+    }
+)
+_DEFAULT_ELEVENLABS_ENCODING = "pcm_24000"
+_ELEVENLABS_TEXT_NORMALIZATION = frozenset({"auto", "on", "off"})
+
+
+def _elevenlabs_encoding() -> str:
+    value = (
+        (os.getenv("ELEVENLABS_OUTPUT_FORMAT") or _DEFAULT_ELEVENLABS_ENCODING)
+        .strip()
+        .lower()
+    )
+    if value in _ELEVENLABS_ENCODINGS:
+        return value
+    logger.warning(
+        "Invalid ELEVENLABS_OUTPUT_FORMAT=%r; using %s",
+        value,
+        _DEFAULT_ELEVENLABS_ENCODING,
+    )
+    return _DEFAULT_ELEVENLABS_ENCODING
+
+
+def _elevenlabs_text_normalization() -> str:
+    value = (os.getenv("ELEVENLABS_TEXT_NORMALIZATION") or "auto").strip().lower()
+    if value in _ELEVENLABS_TEXT_NORMALIZATION:
+        return value
+    logger.warning("Invalid ELEVENLABS_TEXT_NORMALIZATION=%r; using auto", value)
+    return "auto"
+
 
 def _build_elevenlabs_tts(model: str) -> elevenlabs.TTS:
     return elevenlabs.TTS(
@@ -20,9 +79,21 @@ def _build_elevenlabs_tts(model: str) -> elevenlabs.TTS:
         voice_id=elevenlabs_voice_id,
         api_key=elevenlabs_api_key,
         language=os.getenv("ELEVENLABS_TTS_LANGUAGE", "en"),
+        # PCM by default: no decode stage, so jittery/partial WS frames don't stall
+        # playback the way a corrupt MP3 frame does.
+        encoding=_elevenlabs_encoding(),
         streaming_latency=_env_int(
             "ELEVENLABS_STREAMING_LATENCY", 3, min_value=0, max_value=4
         ),
+        # Keep the streaming WebSocket warm across conversational pauses so a quiet
+        # stretch doesn't drop the connection and force a reconnect (heard as a gap
+        # or lost first syllable on the next reply). 180s is the ElevenLabs maximum.
+        inactivity_timeout=_env_int(
+            "ELEVENLABS_INACTIVITY_TIMEOUT", 180, min_value=20, max_value=180
+        ),
+        # "auto" lets ElevenLabs normalize numbers/emails for natural readback while
+        # staying fast; set to "off" for lowest latency or "on" to force it.
+        apply_text_normalization=_elevenlabs_text_normalization(),
         auto_mode=_env_bool("ELEVENLABS_AUTO_MODE", True),
         chunk_length_schedule=[
             _env_int("ELEVENLABS_CHUNK_1", 50, min_value=50, max_value=500),
