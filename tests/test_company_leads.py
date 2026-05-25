@@ -41,11 +41,23 @@ class FakeRedis:
         ("Amon @ Gmail . com", "amon@gmail.com"),
         ("john dot doe at the rate company dot co dot uk", "john.doe@company.co.uk"),
         ("amon underscore s at gmail dot com", "amon_s@gmail.com"),
+        ("amon sharma two thousand at gmail dot com", "amonsharma2000@gmail.com"),
+        ("amon sharma दो हजार एट gmail डॉट com", "amonsharma2000@gmail.com"),
+        (
+            "neha अंडरस्कोर sales एट द रेट company डॉट co डॉट in",
+            "neha_sales@company.co.in",
+        ),
         ("", ""),
     ],
 )
 def test_normalize_spoken_email(spoken, expected) -> None:
     assert woice.normalize_spoken_email(spoken) == expected
+
+
+def test_format_email_for_readback() -> None:
+    assert woice.format_email_for_readback("amon@gmail.com") == (
+        "a m o n @ g m a i l . c o m"
+    )
 
 
 @pytest.mark.parametrize(
@@ -589,6 +601,31 @@ async def test_note_lead_progress_accumulates_in_userdata() -> None:
         "email": "amon@gmail.com",
         "company": "Arisyn",
     }
+
+
+@pytest.mark.asyncio
+async def test_note_lead_progress_returns_email_readback_prompt() -> None:
+    userdata = {"lead_progress": {}}
+    context = SimpleNamespace(session=SimpleNamespace(userdata=userdata))
+
+    result = await woice.note_lead_progress._func(
+        context, email="neha अंडरस्कोर sales एट द रेट company डॉट co डॉट in"
+    )
+
+    assert userdata["lead_progress"]["email"] == "neha_sales@company.co.in"
+    assert "Email captured as neha_sales@company.co.in" in result
+    assert "n e h a _ s a l e s @ c o m p a n y . c o . i n" in result
+
+
+@pytest.mark.asyncio
+async def test_note_lead_progress_rejects_invalid_email_hypothesis() -> None:
+    userdata = {"lead_progress": {}}
+    context = SimpleNamespace(session=SimpleNamespace(userdata=userdata))
+
+    result = await woice.note_lead_progress._func(context, email="amon at gmail")
+
+    assert "invalid" in result
+    assert "email" not in userdata["lead_progress"]
 
 
 def test_upsert_caller_checkpoint_merges_into_existing_record(monkeypatch) -> None:

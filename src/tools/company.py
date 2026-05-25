@@ -24,12 +24,26 @@ _EMAIL_RE = re.compile(r"^[a-z0-9!#$%&'*+/=?^_`{|}~.-]+@[a-z0-9-]+(?:\.[a-z0-9-]
 
 # Spoken-symbol words, longest first so "at the rate" wins over "at".
 _SPOKEN_EMAIL_SUBSTITUTIONS = (
-    (r"\bat the rate(?: of)?\b", "@"),
-    (r"\bunderscore\b", "_"),
-    (r"\b(?:dash|hyphen|minus)\b", "-"),
-    (r"\bplus\b", "+"),
-    (r"\bdot\b", "."),
-    (r"\bat\b", "@"),
+    (r"\b(?:at the rate(?: of)?|ऐट द रेट|एट द रेट|एट द रेट ऑफ)\b", "@"),
+    (r"\b(?:underscore|अंडरस्कोर)\b", "_"),
+    (r"\b(?:dash|hyphen|minus|डैश|हाइफ़न|हाइफन|माइनस)\b", "-"),
+    (r"\b(?:plus|प्लस)\b", "+"),
+    (r"\b(?:dot|डॉट)\b", "."),
+    (r"\b(?:at|ऐट|एट)\b", "@"),
+)
+
+_SPOKEN_EMAIL_DIGITS = (
+    (r"\b(?:two thousand|two thousands|दो हजार)\b", "2000"),
+    (r"\b(?:zero|जीरो|ज़ीरो|शून्य)\b", "0"),
+    (r"\b(?:one|वन|एक)\b", "1"),
+    (r"\b(?:two|टू|दो)\b", "2"),
+    (r"\b(?:three|थ्री|तीन)\b", "3"),
+    (r"\b(?:four|फोर|चार)\b", "4"),
+    (r"\b(?:five|फाइव|पांच|पाँच)\b", "5"),
+    (r"\b(?:six|सिक्स|छह|छः)\b", "6"),
+    (r"\b(?:seven|सेवन|सात)\b", "7"),
+    (r"\b(?:eight|एट|आठ)\b", "8"),
+    (r"\b(?:nine|नाइन|नौ)\b", "9"),
 )
 
 
@@ -46,6 +60,8 @@ def normalize_spoken_email(raw: str) -> str:
     text = raw.strip().lower()
     for pattern, replacement in _SPOKEN_EMAIL_SUBSTITUTIONS:
         text = re.sub(pattern, f" {replacement} ", text)
+    for pattern, replacement in _SPOKEN_EMAIL_DIGITS:
+        text = re.sub(pattern, f" {replacement} ", text)
 
     text = re.sub(r"\s+", "", text)
     # Collapse separators that spacing/substitution may have duplicated.
@@ -56,6 +72,11 @@ def normalize_spoken_email(raw: str) -> str:
 
 def is_valid_email(email: str) -> bool:
     return bool(_EMAIL_RE.match((email or "").strip()))
+
+
+def format_email_for_readback(email: str) -> str:
+    """Space an email out so the agent can read it back unambiguously."""
+    return " ".join((email or "").strip())
 
 
 def normalize_phone(raw: str) -> str:
@@ -671,13 +692,26 @@ async def note_lead_progress(
     if name:
         progress["name"] = name
     if email:
-        progress["email"] = normalize_spoken_email(email)
+        normalized_email = normalize_spoken_email(email)
+        if not is_valid_email(normalized_email):
+            return (
+                "The email hypothesis is invalid after normalization. Ask the caller "
+                "to type it in chat, or collect it in two parts: first before @, then "
+                "the domain."
+            )
+        progress["email"] = normalized_email
     if company:
         progress["company"] = company
     if reason_for_meet:
         progress["reason_for_meet"] = reason_for_meet
 
     _schedule_caller_checkpoint(userdata)
+    if email:
+        return (
+            f"Email captured as {progress['email']}. Repeat it character by "
+            f"character: {format_email_for_readback(progress['email'])}. Ask the "
+            "caller to confirm it before relying on it."
+        )
     return "Noted."
 
 

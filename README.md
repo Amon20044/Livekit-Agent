@@ -160,8 +160,8 @@ Typed input rides the same LiveKit `lk.chat` pipeline as speech, so a caller can
 The agent is tuned for a natural, marketable voice experience:
 
 - Short spoken responses, usually one to three sentences.
-- Hindi-first prompts with multilingual STT/TTS, so callers can switch languages
-  mid-sentence without the agent announcing it.
+- Proper Devanagari Hindi by default, with ElevenLabs pinned to `hi` and
+  multilingual STT available when callers switch languages.
 - Email readback before commit.
 - Confirm-before-save behavior.
 - False-interruption recovery.
@@ -247,7 +247,7 @@ VAD_ACTIVATION_THRESHOLD=0.52
 VAD_SAMPLE_RATE=16000
 
 ELEVENLABS_TTS_MODEL=eleven_flash_v2_5
-ELEVENLABS_TTS_LANGUAGE=auto
+ELEVENLABS_TTS_LANGUAGE=hi
 ELEVENLABS_INACTIVITY_TIMEOUT=180
 ELEVENLABS_TEXT_NORMALIZATION=auto
 ELEVENLABS_SYNC_ALIGNMENT=true

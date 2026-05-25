@@ -14,9 +14,11 @@ def _company_website() -> str:
 
 def build_initial_greeting() -> str:
     return (
-        f"Greet the caller in one short sentence as {_company_name()}, say you can "
-        "help them join the waitlist, and ask what voice workflow they want to "
-        "automate. Warm, polished, not scripted."
+        "Speak in natural Devanagari Hindi. In one short sentence, greet the "
+        f"caller as {_company_name()}, say you can help them join the waitlist, "
+        "and ask which voice workflow they want to automate. Example style: "
+        f'"नमस्ते, मैं {_company_name()} से बोल रही हूँ; आप कौन सा voice workflow automate करना चाहते हैं?" '
+        "Warm, polished, not scripted."
     )
 
 
@@ -41,13 +43,13 @@ def build_returning_greeting(record: dict | None) -> str:
     if record.get("status") == "completed":
         return (
             f"You are speaking again with a returning {company} contact who already "
-            f"completed their waitlist brief. Greet them like a familiar friend of "
-            f"the company: warm, personal, and genuinely glad they came back. Address "
-            f"them{address_by}, ask how they have been, then offer to help with "
-            "anything more they'd like to know about us. Vary your wording naturally "
-            'every time (for example: "Nice to hear from you again, Amon — how have '
-            'you been?"). Keep it to one or two short, natural sentences; never sound '
-            "scripted."
+            f"completed their waitlist brief. Speak in natural Devanagari Hindi. "
+            f"Greet them like a familiar friend of the company: warm, personal, and "
+            f"genuinely glad they came back. Address them{address_by}, ask how they "
+            "have been, then offer to help with anything more they'd like to know "
+            'about us. Vary your wording naturally (for example: "अमोन, आपको फिर '
+            'सुनकर अच्छा लगा; कैसे हैं आप?"). Keep it to one or two short, natural '
+            "sentences; never sound scripted."
         )
 
     known = ", ".join(
@@ -58,24 +60,26 @@ def build_returning_greeting(record: dict | None) -> str:
     known_line = f" You already have {known}." if known else ""
     return (
         f"You are speaking again with a returning {company} contact who started a "
-        f"waitlist brief earlier but did not finish.{known_line} Greet them warmly and "
-        f"personally{address_by}, like the company remembers them and is happy they "
-        "are back, and say you're glad to reconnect. Vary your wording naturally every "
-        'time (for example: "Welcome back, Amon — great to reconnect!"). Briefly '
-        "confirm the details you already have instead of asking again, then offer to "
-        "pick up where you left off. One or two short, natural sentences."
+        f"waitlist brief earlier but did not finish.{known_line} Speak in natural "
+        f"Devanagari Hindi. Greet them warmly and personally{address_by}, like the "
+        "company remembers them and is happy they are back, and say you're glad to "
+        'reconnect. Vary your wording naturally (for example: "अमोन, आपका फिर से '
+        'स्वागत है; चलिए वहीं से आगे बढ़ते हैं."). Briefly confirm the details you '
+        "already have instead of asking again, then offer to pick up where you left "
+        "off. One or two short, natural sentences."
     )
 
 
 def _language_instructions(use_elevenlabs: bool) -> str:
-    # Hindi-first and multilingual on every TTS. ElevenLabs flash and Sarvam are
-    # both multilingual, so the agent opens in Hindi and follows the caller into
-    # any language without announcing the switch.
+    # Hindi-first and multilingual on every TTS. The prompt must be explicit here:
+    # otherwise English product terms make the model drift into English.
     return (
         "# Language\n"
-        "- Hindi by default (natural conversational). Match the user's language if they switch. "
+        "- Speak proper conversational Hindi by default, written in Devanagari. Do not default to English or Hinglish. "
+        "- Keep necessary product/technical words in English only when they sound natural: voice workflow, CRM, calendar, waitlist, email. Surround those terms with Hindi grammar. "
+        "- If the caller clearly switches to English, match them; otherwise continue in Hindi. "
         f"{_company_name()} is built for multilingual workflows across 50+ languages, but do not recite that unless it helps the caller. "
-        "Keep English names, product names, and technical terms in English. Never announce a language switch."
+        "Never announce a language switch."
     )
 
 
@@ -110,10 +114,12 @@ def build_agent_instructions(use_elevenlabs: bool) -> str:
 
 # Capturing email and phone (important)
 - Email addresses and phone numbers are easy to mishear, so never guess them.
+- Ask for the email in Hindi, but keep the actual email characters exactly as spoken or typed.
 - Prefer typed input: invite the caller to type their email (and phone, if needed) into the chat, and tell them you will read it back.
-- If they say it out loud, ask them to go slowly. Only the spoken word "at" (or "at the rate") becomes @, "dot" becomes a period, "underscore" becomes _, and "dash"/"hyphen" becomes -.
+- If they say it out loud, ask them to go slowly. Only spoken "at"/"at the rate"/"ऐट"/"एट"/"एट द रेट" becomes @, "dot"/"डॉट" becomes a period, "underscore"/"अंडरस्कोर" becomes _, "dash"/"hyphen"/"डैश"/"हाइफ़न" becomes -, and "plus"/"प्लस" becomes +.
 - Capture exactly what is spoken. NEVER add a dot, period, underscore, dash, or space that the caller did not actually say. Spoken words, letters, and digits run together with nothing between them: "amon sharma two thousand at gmail dot com" is amonsharma2000@gmail.com, NOT amon.sharma.2000@gmail.com.
-- Do not reformat names into a firstname.lastname pattern. Pass the address to the tool as the caller said it (you may turn spoken "at"/"dot" into @/.); the system handles the spacing.
+- When you form a new email hypothesis, immediately call note_lead_progress with the raw email hypothesis before asking the next question. Use the tool result to read the address back character by character.
+- Do not reformat names into a firstname.lastname pattern. Pass the address to the tool as the caller said it (you may turn spoken symbol words into @/./_/-/+); the system handles the spacing.
 - On a phone call, you can ask the caller to enter their phone number on the keypad and press the pound key, then call get_dialed_phone_number and read it back. Keypad entry is not available on web sessions.
 - Always read an email back grouped clearly and a phone number back one digit at a time, then ask "Did I get that right?" before relying on it.
 

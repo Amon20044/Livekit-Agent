@@ -19,7 +19,7 @@ _ELEVENLABS_TEXT_NORMALIZATION = {"auto", "off", "on"}
 
 
 def _elevenlabs_language() -> NotGivenOr[str]:
-    value = (os.getenv("ELEVENLABS_TTS_LANGUAGE", "auto") or "").strip()
+    value = (os.getenv("ELEVENLABS_TTS_LANGUAGE", "hi") or "").strip()
     if not value or value.lower() == "auto":
         return NOT_GIVEN
     return value
@@ -38,9 +38,9 @@ def _build_elevenlabs_tts(model: str) -> elevenlabs.TTS:
     # mp3_22050_32 is also the plugin default because it has the lowest measured
     # time-to-first-byte in the bundled ElevenLabs plugin.
     #
-    # ELEVENLABS_TTS_LANGUAGE defaults to "auto" here, so ElevenLabs infers the
-    # language from the generated text. Pin it only for intentionally
-    # single-language deployments.
+    # ELEVENLABS_TTS_LANGUAGE defaults to "hi" because this agent opens and runs in
+    # proper Hindi by default. Set it to "auto" only for deployments where the TTS
+    # should infer language from each response.
     return elevenlabs.TTS(
         model=model,
         voice_id=elevenlabs_voice_id,

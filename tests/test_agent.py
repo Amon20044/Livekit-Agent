@@ -109,14 +109,16 @@ def test_returning_greeting_is_warm_and_dynamic(monkeypatch) -> None:
     ).lower()
     # Warm + personal + non-scripted: greet by name, ask how they are, vary wording.
     assert "amon" in completed
-    assert "how have you been" in completed
+    assert "natural devanagari hindi" in completed
+    assert "कैसे हैं आप" in completed
     assert "vary your wording" in completed
     assert "scripted" in completed
 
     partial = build_returning_greeting(
         {"status": "partial", "name": "Amon", "email": "amon@example.com"}
     ).lower()
-    assert "welcome back" in partial
+    assert "natural devanagari hindi" in partial
+    assert "स्वागत" in partial
     assert "vary your wording" in partial
 
 
@@ -576,7 +578,7 @@ def test_build_groq_llm_applies_fast_defaults(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_use_el_builds_optimized_elevenlabs_auto_language_tts(
+async def test_use_el_builds_optimized_elevenlabs_hindi_tts(
     monkeypatch,
 ) -> None:
     monkeypatch.setenv("USE_EL", "true")
@@ -592,8 +594,9 @@ async def test_use_el_builds_optimized_elevenlabs_auto_language_tts(
 
     assert isinstance(tts, elevenlabs.TTS)
     assert tts._opts.model == "eleven_flash_v2_5"
-    # Multilingual flash infers from the generated text unless explicitly pinned.
-    assert not is_given(tts._opts.language)
+    # Hindi is pinned by default so ElevenLabs speaks proper Hindi instead of
+    # drifting into English when the text contains product terms.
+    assert str(tts._opts.language) == "hi"
     assert tts._opts.voice_id == "test-voice"
     # Optimized = the plugin's own defaults, not manual overrides: auto_mode streams
     # a sentence at a time, mp3_22050_32 has the lowest time-to-first-byte, text
@@ -617,6 +620,19 @@ async def test_elevenlabs_language_can_be_pinned(monkeypatch) -> None:
     tts = _build_tts()
 
     assert str(tts._opts.language) == "hi"
+    await tts.aclose()
+
+
+@pytest.mark.asyncio
+async def test_elevenlabs_language_auto_can_be_requested(monkeypatch) -> None:
+    monkeypatch.setenv("USE_EL", "true")
+    monkeypatch.setenv("ELEVENLABS_TTS_LANGUAGE", "auto")
+    monkeypatch.setattr(tts_module, "elevenlabs_api_key", "test-key")
+    monkeypatch.setattr(tts_module, "elevenlabs_voice_id", "test-voice")
+
+    tts = _build_tts()
+
+    assert not is_given(tts._opts.language)
     await tts.aclose()
 
 
