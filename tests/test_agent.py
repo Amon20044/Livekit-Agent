@@ -159,10 +159,14 @@ async def test_woice_agent_greets_and_asks_for_name_on_enter(monkeypatch) -> Non
 
     await WoiceVoiceAgent().on_enter()
 
+    # The opening line is uninterruptible: at call start the acoustic echo
+    # canceller has not converged, so an interruptible greeting hears its own
+    # echo and cuts itself off ("no sound at the start"). Locking the first turn
+    # guarantees the full greeting plays; normal barge-in resumes afterward.
     assert fake_session.generated_replies == [
         {
             "instructions": INITIAL_GREETING_INSTRUCTIONS,
-            "allow_interruptions": True,
+            "allow_interruptions": False,
         }
     ]
     assert "Woice AI" in INITIAL_GREETING_INSTRUCTIONS

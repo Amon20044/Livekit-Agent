@@ -69,9 +69,14 @@ class WoiceVoiceAgent(Agent):
         record = (
             userdata.get("returning_caller") if isinstance(userdata, dict) else None
         )
+        # Opening line is uninterruptible. At call start the echo canceller has
+        # not converged yet, so an interruptible greeting hears its own audio
+        # echo back and self-interrupts within the first frames — the caller
+        # hears a chopped intro or "no sound." Locking the first turn guarantees
+        # the greeting plays in full; barge-in resumes for the rest of the call.
         await self.session.generate_reply(
             instructions=build_returning_greeting(record),
-            allow_interruptions=True,
+            allow_interruptions=False,
         )
 
 
