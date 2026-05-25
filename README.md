@@ -8,7 +8,7 @@
 
 Website: [woice.vercel.app](https://woice.vercel.app)
 
-Built on [LiveKit Agents](https://github.com/livekit/agents) with Speechmatics, Gemini, Sarvam, ElevenLabs, Redis, and production-grade turn-taking.
+Built on [LiveKit Agents](https://github.com/livekit/agents) with Deepgram, Gemini, Sarvam, ElevenLabs, Redis, and production-grade turn-taking.
 
 </div>
 
@@ -128,7 +128,7 @@ Twilio / SIP / LiveKit
 LiveKit room
   |
   v
-Speechmatics STT
+Deepgram Nova-3 STT
   |
   v
 Silero VAD + LiveKit multilingual turn detector
@@ -160,8 +160,8 @@ Typed input rides the same LiveKit `lk.chat` pipeline as speech, so a caller can
 The agent is tuned for a natural, marketable voice experience:
 
 - Short spoken responses, usually one to three sentences.
-- Hindi by default on Sarvam, English by default on ElevenLabs.
-- Mid-sentence language matching without announcing a language switch.
+- Hindi-first prompts with multilingual STT/TTS, so callers can switch languages
+  mid-sentence without the agent announcing it.
 - Email readback before commit.
 - Confirm-before-save behavior.
 - False-interruption recovery.
@@ -216,22 +216,19 @@ WOICE_REPLY_TO=
 CALLER_MEMORY_TTL_SECONDS=2592000
 LEAD_TTL_SECONDS=86400
 
-SPEECHMATICS_API_KEY=
-SPEECHMATICS_STT_LANGUAGE=en
-SPEECHMATICS_OPERATING_POINT=enhanced
-SPEECHMATICS_INCLUDE_PARTIALS=true
-SPEECHMATICS_MAX_DELAY=0.7
-SPEECHMATICS_END_OF_UTTERANCE_SILENCE_TRIGGER=0.5
-SPEECHMATICS_ENABLE_DIARIZATION=true
-SPEECHMATICS_SPEAKER_ACTIVE_FORMAT="<{speaker_id}>{text}</{speaker_id}>"
-SPEECHMATICS_SPEAKER_PASSIVE_FORMAT="[{speaker_id}^PASSIVE*] {text}"
+DEEPGRAM_API_KEY=
+DEEPGRAM_STT_MODEL=nova-3
+DEEPGRAM_STT_LANGUAGE=multi
+DEEPGRAM_ENDPOINTING_MS=25
+DEEPGRAM_FILLER_WORDS=true
+DEEPGRAM_SMART_FORMAT=false
 
 GEMINI_LLM_MODEL=gemini-2.5-flash-lite
 GEMINI_THINKING_BUDGET=0
 GEMINI_MAX_OUTPUT_TOKENS=220
 
-MIN_ENDPOINTING_DELAY=0.22
-MAX_ENDPOINTING_DELAY=0.9
+MIN_ENDPOINTING_DELAY=0.35
+MAX_ENDPOINTING_DELAY=1.2
 ENDPOINTING_MODE=dynamic
 
 INTERRUPTION_MODE=vad
@@ -240,24 +237,24 @@ MIN_INTERRUPTION_WORDS=6
 FALSE_INTERRUPTION_TIMEOUT=2.0
 
 PREEMPTIVE_GENERATION=true
-PREEMPTIVE_TTS=true
+PREEMPTIVE_TTS=false
 PREEMPTIVE_MAX_SPEECH_DURATION=2.5
 
 VAD_MIN_SPEECH_DURATION=0.04
-VAD_MIN_SILENCE_DURATION=0.35
+VAD_MIN_SILENCE_DURATION=0.42
 VAD_PREFIX_PADDING_DURATION=0.45
 VAD_ACTIVATION_THRESHOLD=0.52
 VAD_SAMPLE_RATE=16000
 
-# ElevenLabs (USE_EL=true). PCM output + a warm WebSocket reduce mid-call audio
-# dropouts; see "Audio reliability" below.
-ELEVENLABS_OUTPUT_FORMAT=pcm_24000
+ELEVENLABS_TTS_MODEL=eleven_flash_v2_5
+ELEVENLABS_TTS_LANGUAGE=auto
 ELEVENLABS_INACTIVITY_TIMEOUT=180
 ELEVENLABS_TEXT_NORMALIZATION=auto
+ELEVENLABS_SYNC_ALIGNMENT=true
 ```
 
-Speechmatics Smart Turn is hard-coded for STT endpointing. Silero VAD still runs
-in `AgentSession` for voice activity and interruption handling.
+Deepgram interim transcripts, Silero VAD, and the LiveKit multilingual turn
+detector work together for end-of-turn timing and interruption handling.
 
 `MIN_INTERRUPTION_WORDS=6` is the intelligent barge-in gate: VAD and STT keep
 detecting while the caller speaks, but the agent keeps talking through up to five
@@ -279,8 +276,8 @@ in-flight checkpoint and writes a final snapshot as a safety net.
 
 ### Audio reliability
 
-ElevenLabs defaults to a low-bitrate `mp3_22050_32` stream. We default to
-`pcm_24000` instead: PCM has no decode stage, so a late or partial frame on the
+ElevenLabs `auto_mode` stays on so the plugin streams one sentence or phrase at a
+time without a manual chunk schedule. The bundled default `mp3_22050_32` keeps
 streaming socket degrades to a tiny silence rather than stalling the MP3 decoder —
 the usual cause of choppy / "lost packet" audio mid-call. The streaming WebSocket is
 also held open for up to `ELEVENLABS_INACTIVITY_TIMEOUT` seconds (180 max) so a quiet

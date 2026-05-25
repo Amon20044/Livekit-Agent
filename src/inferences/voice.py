@@ -16,9 +16,10 @@ def _tts_provider(use_elevenlabs: bool | None = None) -> str:
 
 
 def _stt_language(use_elevenlabs: bool | None = None) -> str:
-    # Hindi by default for both TTS providers; the multilingual STT still handles
-    # English and code-switching. Override with SPEECHMATICS_STT_LANGUAGE.
-    return os.getenv("SPEECHMATICS_STT_LANGUAGE", "hi")
+    # Deepgram Nova-3 uses "multi" to auto-detect each segment and handle
+    # code-switching. Pin with DEEPGRAM_STT_LANGUAGE when a deployment is
+    # intentionally single-language.
+    return os.getenv("DEEPGRAM_STT_LANGUAGE", "multi")
 
 
 def _deepgram_language(use_elevenlabs: bool | None = None) -> str:

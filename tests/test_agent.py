@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 from livekit.agents import BuiltinAudioClip, llm
+from livekit.agents.utils import is_given
 from livekit.plugins import ai_coustics, aws, elevenlabs, groq, sarvam
 
 from app import agent_session as agent_module
@@ -200,7 +201,33 @@ def test_plugin_model_accepts_prefixed_and_legacy_values() -> None:
     assert _plugin_model("sarvam/bulbul:v3", "sarvam") == "bulbul:v3"
 
 
-def test_build_stt_uses_speechmatics_defaults_from_reference_config(
+def test_build_stt_uses_deepgram_multilingual_defaults(monkeypatch) -> None:
+    captured: dict = {}
+
+    class FakeSTT:
+        def __init__(self, **kwargs) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setattr(stt_module.deepgram, "STT", FakeSTT)
+    monkeypatch.setattr(stt_module, "deepgram_api_key", "test-key")
+    monkeypatch.delenv("DEEPGRAM_STT_MODEL", raising=False)
+    monkeypatch.delenv("DEEPGRAM_SMART_FORMAT", raising=False)
+    monkeypatch.delenv("DEEPGRAM_FILLER_WORDS", raising=False)
+    monkeypatch.delenv("DEEPGRAM_ENDPOINTING_MS", raising=False)
+
+    stt_module.build_stt("multi")
+
+    assert captured["model"] == "nova-3"
+    assert captured["language"] == "multi"
+    assert captured["api_key"] == "test-key"
+    assert captured["interim_results"] is True
+    assert captured["punctuate"] is True
+    assert captured["smart_format"] is False
+    assert captured["filler_words"] is True
+    assert captured["endpointing_ms"] == 25
+
+
+def test_build_stt_deepgram_latency_and_formatting_are_configurable(
     monkeypatch,
 ) -> None:
     captured: dict = {}
@@ -209,95 +236,20 @@ def test_build_stt_uses_speechmatics_defaults_from_reference_config(
         def __init__(self, **kwargs) -> None:
             captured.update(kwargs)
 
-    monkeypatch.setattr(stt_module.speechmatics, "STT", FakeSTT)
-    monkeypatch.delenv("SPEECHMATICS_OPERATING_POINT", raising=False)
-    monkeypatch.delenv("SPEECHMATICS_INCLUDE_PARTIALS", raising=False)
-    monkeypatch.delenv("SPEECHMATICS_MAX_DELAY", raising=False)
-    monkeypatch.delenv("SPEECHMATICS_END_OF_UTTERANCE_SILENCE_TRIGGER", raising=False)
-    monkeypatch.setenv("SPEECHMATICS_TURN_DETECTION_MODE", "fixed")
-    monkeypatch.delenv("SPEECHMATICS_ENABLE_DIARIZATION", raising=False)
-    monkeypatch.delenv("SPEECHMATICS_PREFER_CURRENT_SPEAKER", raising=False)
-    monkeypatch.delenv("SPEECHMATICS_SPEAKER_SENSITIVITY", raising=False)
-    monkeypatch.delenv("SPEECHMATICS_MAX_SPEAKERS", raising=False)
+    monkeypatch.setattr(stt_module.deepgram, "STT", FakeSTT)
+    monkeypatch.setattr(stt_module, "deepgram_api_key", "test-key")
+    monkeypatch.setenv("DEEPGRAM_STT_MODEL", "deepgram/nova-3-general")
+    monkeypatch.setenv("DEEPGRAM_SMART_FORMAT", "true")
+    monkeypatch.setenv("DEEPGRAM_FILLER_WORDS", "false")
+    monkeypatch.setenv("DEEPGRAM_ENDPOINTING_MS", "80")
 
-    stt_module.build_stt("en")
+    stt_module.build_stt("hi")
 
-    assert captured["language"] == "en"
-    assert (
-        captured["operating_point"] == stt_module.speechmatics.OperatingPoint.ENHANCED
-    )
-    assert captured["include_partials"] is True
-    assert captured["max_delay"] == 0.7
-    assert captured["end_of_utterance_silence_trigger"] == 0.5
-    assert (
-        captured["turn_detection_mode"]
-        == stt_module.speechmatics.TurnDetectionMode.SMART_TURN
-    )
-    assert captured["enable_diarization"] is True
-    assert captured["speaker_active_format"] == "<{speaker_id}>{text}</{speaker_id}>"
-    assert captured["speaker_passive_format"] == "[{speaker_id}^PASSIVE*] {text}"
-    # Locks STT onto the customer; optional diarization knobs stay unset by default.
-    assert captured["prefer_current_speaker"] is True
-    assert "speaker_sensitivity" not in captured
-    assert "max_speakers" not in captured
-    assert [
-        (entry.content, entry.sounds_like) for entry in captured["additional_vocab"]
-    ] == [
-        ("LiveKit", ["live kit"]),
-        ("Woice", ["voice"]),
-        ("2000", ["two thousands"]),
-        ("Speechmatics", ["speech-matics"]),
-    ]
-
-
-def test_build_stt_speaker_focus_knobs_are_configurable(monkeypatch) -> None:
-    captured: dict = {}
-
-    class FakeSTT:
-        def __init__(self, **kwargs) -> None:
-            captured.update(kwargs)
-
-    monkeypatch.setattr(stt_module.speechmatics, "STT", FakeSTT)
-    monkeypatch.setenv("SPEECHMATICS_PREFER_CURRENT_SPEAKER", "false")
-    monkeypatch.setenv("SPEECHMATICS_SPEAKER_SENSITIVITY", "0.4")
-    monkeypatch.setenv("SPEECHMATICS_MAX_SPEAKERS", "2")
-
-    stt_module.build_stt("en")
-
-    assert captured["prefer_current_speaker"] is False
-    assert captured["speaker_sensitivity"] == 0.4
-    assert captured["max_speakers"] == 2
-
-
-def test_build_stt_speechmatics_latency_and_diarization_are_configurable(
-    monkeypatch,
-) -> None:
-    captured: dict = {}
-
-    class FakeSTT:
-        def __init__(self, **kwargs) -> None:
-            captured.update(kwargs)
-
-    monkeypatch.setattr(stt_module.speechmatics, "STT", FakeSTT)
-    monkeypatch.setenv("SPEECHMATICS_OPERATING_POINT", "standard")
-    monkeypatch.setenv("SPEECHMATICS_INCLUDE_PARTIALS", "false")
-    monkeypatch.setenv("SPEECHMATICS_MAX_DELAY", "1.1")
-    monkeypatch.setenv("SPEECHMATICS_END_OF_UTTERANCE_SILENCE_TRIGGER", "0.8")
-    monkeypatch.setenv("SPEECHMATICS_ENABLE_DIARIZATION", "false")
-
-    stt_module.build_stt("en")
-
-    assert (
-        captured["operating_point"] == stt_module.speechmatics.OperatingPoint.STANDARD
-    )
-    assert captured["include_partials"] is False
-    assert captured["max_delay"] == 1.1
-    assert captured["end_of_utterance_silence_trigger"] == 0.8
-    assert (
-        captured["turn_detection_mode"]
-        == stt_module.speechmatics.TurnDetectionMode.SMART_TURN
-    )
-    assert captured["enable_diarization"] is False
+    assert captured["model"] == "nova-3"
+    assert captured["language"] == "hi"
+    assert captured["smart_format"] is True
+    assert captured["filler_words"] is False
+    assert captured["endpointing_ms"] == 80
 
 
 def test_env_bool(monkeypatch) -> None:
@@ -332,15 +284,15 @@ def test_turn_handling_defaults_are_low_latency(monkeypatch) -> None:
     options = _build_turn_handling_options(turn_detection=None)
 
     assert options["endpointing"]["mode"] == "dynamic"
-    assert options["endpointing"]["min_delay"] == 0.22
-    assert options["endpointing"]["max_delay"] == 0.9
+    assert options["endpointing"]["min_delay"] == 0.35
+    assert options["endpointing"]["max_delay"] == 1.2
     # VAD by default (adaptive needs LiveKit Cloud); 6 words required to interrupt
     # so backchannel and short fillers (up to 5 words) don't cut the agent off.
     assert options["interruption"]["mode"] == "vad"
     assert options["interruption"]["min_duration"] == 0.5
     assert options["interruption"]["min_words"] == 6
     assert options["preemptive_generation"]["enabled"] is True
-    assert options["preemptive_generation"]["preemptive_tts"] is True
+    assert options["preemptive_generation"]["preemptive_tts"] is False
     assert options["preemptive_generation"]["max_speech_duration"] == 2.5
 
 
@@ -398,7 +350,7 @@ def test_vad_load_uses_fast_production_defaults(monkeypatch) -> None:
 
     assert _build_vad() == "vad"
     assert captured["min_speech_duration"] == 0.04
-    assert captured["min_silence_duration"] == 0.35
+    assert captured["min_silence_duration"] == 0.42
     assert captured["prefix_padding_duration"] == 0.45
     assert captured["activation_threshold"] == 0.52
     assert captured["sample_rate"] == 16000
@@ -453,10 +405,10 @@ def test_use_el_defaults_speech_stack_to_hindi_multilingual(monkeypatch) -> None
         pass
 
     monkeypatch.setenv("USE_EL", "true")
-    monkeypatch.delenv("SPEECHMATICS_STT_LANGUAGE", raising=False)
+    monkeypatch.delenv("DEEPGRAM_STT_LANGUAGE", raising=False)
     monkeypatch.setattr(voice_module, "MultilingualModel", FakeMultilingualModel)
 
-    assert _stt_language() == "hi"
+    assert _stt_language() == "multi"
     assert isinstance(_build_turn_detector(), FakeMultilingualModel)
 
 
@@ -465,16 +417,16 @@ def test_sarvam_defaults_speech_stack_to_hindi_multilingual(monkeypatch) -> None
         pass
 
     monkeypatch.setenv("USE_EL", "false")
-    monkeypatch.delenv("SPEECHMATICS_STT_LANGUAGE", raising=False)
+    monkeypatch.delenv("DEEPGRAM_STT_LANGUAGE", raising=False)
     monkeypatch.setattr(voice_module, "MultilingualModel", FakeMultilingualModel)
 
-    assert _stt_language() == "hi"
+    assert _stt_language() == "multi"
     assert isinstance(_build_turn_detector(), FakeMultilingualModel)
 
 
-def test_speechmatics_language_is_configurable(monkeypatch) -> None:
+def test_deepgram_language_is_configurable(monkeypatch) -> None:
     monkeypatch.setenv("USE_EL", "false")
-    monkeypatch.setenv("SPEECHMATICS_STT_LANGUAGE", "en")
+    monkeypatch.setenv("DEEPGRAM_STT_LANGUAGE", "en")
 
     assert _stt_language() == "en"
 
@@ -624,10 +576,15 @@ def test_build_groq_llm_applies_fast_defaults(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_use_el_builds_optimized_elevenlabs_hindi_tts(monkeypatch) -> None:
+async def test_use_el_builds_optimized_elevenlabs_auto_language_tts(
+    monkeypatch,
+) -> None:
     monkeypatch.setenv("USE_EL", "true")
     monkeypatch.delenv("ELEVENLABS_TTS_MODEL", raising=False)
     monkeypatch.delenv("ELEVENLABS_TTS_LANGUAGE", raising=False)
+    monkeypatch.delenv("ELEVENLABS_INACTIVITY_TIMEOUT", raising=False)
+    monkeypatch.delenv("ELEVENLABS_TEXT_NORMALIZATION", raising=False)
+    monkeypatch.delenv("ELEVENLABS_SYNC_ALIGNMENT", raising=False)
     monkeypatch.setattr(tts_module, "elevenlabs_api_key", "test-key")
     monkeypatch.setattr(tts_module, "elevenlabs_voice_id", "test-voice")
 
@@ -635,8 +592,8 @@ async def test_use_el_builds_optimized_elevenlabs_hindi_tts(monkeypatch) -> None
 
     assert isinstance(tts, elevenlabs.TTS)
     assert tts._opts.model == "eleven_flash_v2_5"
-    # Multilingual flash model speaks Hindi by default.
-    assert str(tts._opts.language) == "hi"
+    # Multilingual flash infers from the generated text unless explicitly pinned.
+    assert not is_given(tts._opts.language)
     assert tts._opts.voice_id == "test-voice"
     # Optimized = the plugin's own defaults, not manual overrides: auto_mode streams
     # a sentence at a time, mp3_22050_32 has the lowest time-to-first-byte, text
@@ -646,7 +603,32 @@ async def test_use_el_builds_optimized_elevenlabs_hindi_tts(monkeypatch) -> None
     assert tts._opts.auto_mode is True
     assert tts._opts.apply_text_normalization == "auto"
     assert tts._opts.inactivity_timeout == 180
+    assert tts._opts.sync_alignment is True
     await tts.aclose()
+
+
+@pytest.mark.asyncio
+async def test_elevenlabs_language_can_be_pinned(monkeypatch) -> None:
+    monkeypatch.setenv("USE_EL", "true")
+    monkeypatch.setenv("ELEVENLABS_TTS_LANGUAGE", "hi")
+    monkeypatch.setattr(tts_module, "elevenlabs_api_key", "test-key")
+    monkeypatch.setattr(tts_module, "elevenlabs_voice_id", "test-voice")
+
+    tts = _build_tts()
+
+    assert str(tts._opts.language) == "hi"
+    await tts.aclose()
+
+
+def test_elevenlabs_text_normalization_validates(monkeypatch) -> None:
+    monkeypatch.delenv("ELEVENLABS_TEXT_NORMALIZATION", raising=False)
+    assert tts_module._elevenlabs_text_normalization() == "auto"
+
+    monkeypatch.setenv("ELEVENLABS_TEXT_NORMALIZATION", "off")
+    assert tts_module._elevenlabs_text_normalization() == "off"
+
+    monkeypatch.setenv("ELEVENLABS_TEXT_NORMALIZATION", "loud")
+    assert tts_module._elevenlabs_text_normalization() == "auto"
 
 
 def test_sarvam_tts_uses_multilingual_indian_defaults(monkeypatch) -> None:

@@ -17,7 +17,7 @@ from app.dtmf import DtmfCollector, register_dtmf_collector
 from audio.background import _build_background_audio_player
 from core.env import _env_bool, _env_float, _env_int, _plugin_model
 from inferences.llm import _build_llm, _llm_provider
-from inferences.stt import build_stt, speechmatics_operating_point_name
+from inferences.stt import _stt_provider_name, build_stt, stt_model_name
 from inferences.tts import _build_tts
 from inferences.turn import _build_turn_handling_options
 from inferences.voice import _stt_language, _tts_provider, _use_elevenlabs_tts
@@ -90,7 +90,7 @@ def _build_vad():
             "VAD_MIN_SPEECH_DURATION", 0.04, min_value=0.01, max_value=0.5
         ),
         min_silence_duration=_env_float(
-            "VAD_MIN_SILENCE_DURATION", 0.35, min_value=0.1, max_value=1.2
+            "VAD_MIN_SILENCE_DURATION", 0.42, min_value=0.1, max_value=1.2
         ),
         prefix_padding_duration=_env_float(
             "VAD_PREFIX_PADDING_DURATION", 0.45, min_value=0.0, max_value=1.0
@@ -166,7 +166,8 @@ async def entrypoint(ctx: JobContext):
     use_elevenlabs = _use_elevenlabs_tts()
     tts_provider = _tts_provider(use_elevenlabs)
     stt_language = _stt_language(use_elevenlabs)
-    stt_model = speechmatics_operating_point_name()
+    stt_provider = _stt_provider_name()
+    stt_model = stt_model_name()
     llm_provider = _llm_provider()
     if llm_provider == "bedrock":
         llm_model = bedrock_model.strip()
@@ -189,7 +190,7 @@ async def entrypoint(ctx: JobContext):
 
     logger.info(
         "Starting low-latency voice pipeline with stt=%s:%s llm=%s:%s tts_provider=%s tts=%s:%s voice=%s",
-        f"speechmatics/{stt_model}",
+        f"{stt_provider}/{stt_model}",
         stt_language,
         llm_provider,
         llm_model,

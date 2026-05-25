@@ -1,8 +1,10 @@
 import os
+from typing import Literal
 
+from livekit.agents.types import NOT_GIVEN, NotGivenOr
 from livekit.plugins import elevenlabs, sarvam
 
-from core.env import _env_float, _env_int, _plugin_model
+from core.env import _env_bool, _env_float, _env_int, _plugin_model
 from inferences.voice import _use_elevenlabs_tts
 from settings import (
     elevenlabs_api_key,
@@ -13,22 +15,43 @@ from settings import (
     sarvam_target_language_code,
 )
 
+_ELEVENLABS_TEXT_NORMALIZATION = {"auto", "off", "on"}
+
+
+def _elevenlabs_language() -> NotGivenOr[str]:
+    value = (os.getenv("ELEVENLABS_TTS_LANGUAGE", "auto") or "").strip()
+    if not value or value.lower() == "auto":
+        return NOT_GIVEN
+    return value
+
+
+def _elevenlabs_text_normalization() -> Literal["auto", "off", "on"]:
+    value = (os.getenv("ELEVENLABS_TEXT_NORMALIZATION", "auto") or "").strip().lower()
+    if value in _ELEVENLABS_TEXT_NORMALIZATION:
+        return value  # type: ignore[return-value]
+    return "auto"
+
 
 def _build_elevenlabs_tts(model: str) -> elevenlabs.TTS:
-    # Minimal config — the plugin's own defaults are already the optimized path:
-    # auto_mode streams a sentence at a time, the default mp3_22050_32 encoding has
-    # the lowest time-to-first-byte, text normalization is "auto", and the
-    # streaming WebSocket stays warm for 180s. No manual chunk schedule, encoding
-    # override, or voice tuning needed.
+    # The plugin's optimized streaming path is auto_mode with its sentence
+    # tokenizer: it flushes each sentence/phrase without a manual chunk schedule.
+    # mp3_22050_32 is also the plugin default because it has the lowest measured
+    # time-to-first-byte in the bundled ElevenLabs plugin.
     #
-    # eleven_flash_v2_5 is multilingual, so the agent speaks Hindi by default and
-    # follows the caller into any language. Override with ELEVENLABS_TTS_LANGUAGE.
+    # ELEVENLABS_TTS_LANGUAGE defaults to "auto" here, so ElevenLabs infers the
+    # language from the generated text. Pin it only for intentionally
+    # single-language deployments.
     return elevenlabs.TTS(
         model=model,
         voice_id=elevenlabs_voice_id,
         api_key=elevenlabs_api_key,
-        language=os.getenv("ELEVENLABS_TTS_LANGUAGE", "hi"),
+        language=_elevenlabs_language(),
         auto_mode=True,
+        inactivity_timeout=_env_int(
+            "ELEVENLABS_INACTIVITY_TIMEOUT", 180, min_value=20, max_value=180
+        ),
+        apply_text_normalization=_elevenlabs_text_normalization(),
+        sync_alignment=_env_bool("ELEVENLABS_SYNC_ALIGNMENT", True),
     )
 
 

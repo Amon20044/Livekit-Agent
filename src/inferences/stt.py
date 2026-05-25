@@ -10,18 +10,22 @@ def stt_model_name() -> str:
     return _plugin_model(os.getenv("DEEPGRAM_STT_MODEL", "nova-3"), "deepgram")
 
 
+def _stt_provider_name() -> str:
+    return "deepgram"
+
+
 def build_stt(stt_language: str) -> deepgram.STT:
-    # Deepgram nova-3 with language="multi" auto-detects the spoken language and
-    # code-switches in real time, so the caller can speak any supported language and
-    # the agent understands it without being pinned to one language.
+    language = (stt_language or "multi").strip() or "multi"
+
+    # Deepgram Nova-3 with language="multi" auto-detects each spoken segment, so
+    # callers can move between Hindi, English, and other supported languages
+    # without the pipeline being pinned to one locale.
     #
     # interim_results stay on to power smart turn detection (the LiveKit multilingual
-    # end-of-utterance model + Silero VAD) and the barge-in word gate. They never
-    # reach the LLM: with preemptive generation off, the LLM is called exactly once
-    # per turn, on the final transcript.
+    # end-of-utterance model + Silero VAD) and the barge-in word gate.
     return deepgram.STT(
         model=stt_model_name(),
-        language=stt_language,
+        language=language,
         api_key=deepgram_api_key,
         interim_results=True,
         punctuate=True,
