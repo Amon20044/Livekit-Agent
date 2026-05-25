@@ -362,7 +362,9 @@ async def entrypoint(ctx: JobContext):
     ctx.add_shutdown_callback(close_background_audio)
 
     if _noise_cancellation_enabled():
-        auth_mode = "ai-coustics license key" if _aicoustics_license_key() else "LiveKit Cloud"
+        auth_mode = (
+            "ai-coustics license key" if _aicoustics_license_key() else "LiveKit Cloud"
+        )
         logger.info(
             "Input noise cancellation ON (%s, model=%s) — STT receives denoised audio",
             auth_mode,
