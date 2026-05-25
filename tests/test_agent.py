@@ -26,7 +26,6 @@ from inferences.llm import (
     _build_llm_kwargs,
     _LatencyOptimizedBedrockLLM,
     _llm_provider,
-    _use_vertexai,
 )
 from inferences.tts import _build_tts
 from inferences.turn import _build_turn_handling_options
@@ -444,45 +443,29 @@ def test_gemini_25_defaults_to_fast_thinking_and_compact_output(monkeypatch) -> 
     assert kwargs["max_output_tokens"] == 220
 
 
-def test_gemini_api_kwargs_send_api_key_not_vertexai(monkeypatch) -> None:
+def test_gemini_api_kwargs_send_api_key_and_disable_vertexai(monkeypatch) -> None:
     monkeypatch.delenv("GOOGLE_GENAI_USE_VERTEXAI", raising=False)
     monkeypatch.setattr(llm_module, "google_api_key", "test-key")
 
     kwargs = _build_llm_kwargs("gemini-2.5-flash-lite")
 
-    assert not _use_vertexai()
     assert kwargs["api_key"] == "test-key"
-    assert "vertexai" not in kwargs
+    assert kwargs["vertexai"] is False
     assert "project" not in kwargs
 
 
-def test_vertexai_kwargs_use_adc_without_api_key(monkeypatch) -> None:
+def test_gemini_api_kwargs_ignore_vertexai_env(monkeypatch) -> None:
     monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "true")
     monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "woice-prod")
     monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "asia-south1")
+    monkeypatch.setattr(llm_module, "google_api_key", "test-key")
 
     kwargs = _build_llm_kwargs("gemini-2.5-flash-lite")
 
-    # Vertex AI authenticates via ADC; the plugin nulls any key, so we never send one.
-    assert _use_vertexai()
-    assert kwargs["vertexai"] is True
-    assert kwargs["project"] == "woice-prod"
-    assert kwargs["location"] == "asia-south1"
-    assert "api_key" not in kwargs
-
-
-def test_vertexai_infers_project_and_defaults_location(monkeypatch) -> None:
-    monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "1")
-    monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
-    monkeypatch.delenv("GOOGLE_CLOUD_LOCATION", raising=False)
-
-    kwargs = _build_llm_kwargs("gemini-2.5-flash-lite")
-
-    # Project omitted so the plugin infers it from ADC; location falls back.
-    assert kwargs["vertexai"] is True
+    assert kwargs["api_key"] == "test-key"
+    assert kwargs["vertexai"] is False
     assert "project" not in kwargs
-    assert kwargs["location"] == "us-central1"
-    assert "api_key" not in kwargs
+    assert "location" not in kwargs
 
 
 def test_llm_uses_fallback_adapter_by_default(monkeypatch) -> None:

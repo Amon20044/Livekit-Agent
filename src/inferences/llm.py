@@ -13,37 +13,16 @@ from settings import (
 )
 
 
-def _use_vertexai() -> bool:
-    """Whether to route Gemini through Vertex AI instead of the Gemini API.
-
-    The plugin reads ``GOOGLE_GENAI_USE_VERTEXAI`` directly, but we resolve it
-    ourselves so the api_key vs. ADC kwargs are built explicitly.
-    """
-    return _env_bool("GOOGLE_GENAI_USE_VERTEXAI", False)
-
-
 def _build_llm_kwargs(model: str) -> dict[str, Any]:
     kwargs: dict[str, Any] = {
         "model": model,
+        "api_key": google_api_key,
+        "vertexai": False,
         "temperature": _env_float(
             "GEMINI_TEMPERATURE", 0.35, min_value=0.0, max_value=2.0
         ),
         "max_output_tokens": _env_int("GEMINI_MAX_OUTPUT_TOKENS", 220, min_value=64),
     }
-
-    if _use_vertexai():
-        # Vertex AI authenticates via Application Default Credentials (gcloud
-        # auth application-default login / GOOGLE_APPLICATION_CREDENTIALS service
-        # account / workload identity). No API key is sent — the plugin nulls it
-        # for Vertex AI — and the project is inferred from ADC when
-        # GOOGLE_CLOUD_PROJECT is unset.
-        kwargs["vertexai"] = True
-        project = os.getenv("GOOGLE_CLOUD_PROJECT")
-        if project:
-            kwargs["project"] = project
-        kwargs["location"] = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
-    else:
-        kwargs["api_key"] = google_api_key
 
     if model.startswith("gemini-2.5"):
         kwargs["thinking_config"] = {
