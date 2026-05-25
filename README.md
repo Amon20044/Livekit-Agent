@@ -278,13 +278,11 @@ in-flight checkpoint and writes a final snapshot as a safety net.
 
 ElevenLabs `auto_mode` stays on so the plugin streams one sentence or phrase at a
 time without a manual chunk schedule. The bundled default `mp3_22050_32` keeps
-streaming socket degrades to a tiny silence rather than stalling the MP3 decoder —
-the usual cause of choppy / "lost packet" audio mid-call. The streaming WebSocket is
-also held open for up to `ELEVENLABS_INACTIVITY_TIMEOUT` seconds (180 max) so a quiet
-stretch doesn't drop the connection and glitch the next reply. Note the
-agent→caller leg is WebRTC/Opus, which already does packet-loss concealment;
-enhanced noise cancellation (on by default for `*.livekit.cloud`) further protects
-that path.
+time-to-first-byte low, and the streaming WebSocket is held open for up to
+`ELEVENLABS_INACTIVITY_TIMEOUT` seconds (180 max) so a quiet stretch does not force
+a reconnect before the next reply. The agent-to-caller leg is WebRTC/Opus, which
+already performs packet-loss concealment; enhanced noise cancellation (on by
+default for `*.livekit.cloud`) further protects the input path.
 
 ---
 
