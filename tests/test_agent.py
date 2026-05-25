@@ -19,12 +19,14 @@ from inferences.llm import (
     _build_llm_kwargs,
     _LatencyOptimizedBedrockLLM,
     _llm_provider,
+    _use_vertexai,
 )
 from inferences.tts import _build_tts
 from inferences.turn import _build_turn_handling_options
 from inferences.voice import _build_turn_detector, _stt_language
 from prompts.instructions import (
     INITIAL_GREETING_INSTRUCTIONS,
+    build_agent_instructions,
     build_initial_greeting,
     build_returning_greeting,
 )
@@ -90,6 +92,35 @@ def test_returning_greeting_variants(monkeypatch) -> None:
     )
     assert "reconnect" in partial.lower()
     assert "amon@example.com" in partial
+
+
+def test_returning_greeting_is_warm_and_dynamic(monkeypatch) -> None:
+    monkeypatch.delenv("COMPANY_NAME", raising=False)
+
+    completed = build_returning_greeting(
+        {"status": "completed", "name": "Amon"}
+    ).lower()
+    # Warm + personal + non-scripted: greet by name, ask how they are, vary wording.
+    assert "amon" in completed
+    assert "how have you been" in completed
+    assert "vary your wording" in completed
+    assert "scripted" in completed
+
+    partial = build_returning_greeting(
+        {"status": "partial", "name": "Amon", "email": "amon@example.com"}
+    ).lower()
+    assert "welcome back" in partial
+    assert "vary your wording" in partial
+
+
+def test_email_capture_forbids_invented_separators() -> None:
+    instructions = build_agent_instructions(use_elevenlabs=True).lower()
+
+    # The dots in "amon.sharma.2000" came from the LLM, not the normalizer, so the
+    # prompt must explicitly forbid inserting separators the caller didn't speak.
+    assert "amonsharma2000@gmail.com" in instructions
+    assert "did not actually say" in instructions
+    assert "firstname.lastname" in instructions
 
 
 def test_company_name_is_configurable_via_env(monkeypatch) -> None:
@@ -400,6 +431,47 @@ def test_gemini_25_defaults_to_fast_thinking_and_compact_output(monkeypatch) -> 
     # thinking_budget=0 removes the pre-response reasoning delay for voice latency.
     assert kwargs["thinking_config"] == {"thinking_budget": 0}
     assert kwargs["max_output_tokens"] == 220
+
+
+def test_gemini_api_kwargs_send_api_key_not_vertexai(monkeypatch) -> None:
+    monkeypatch.delenv("GOOGLE_GENAI_USE_VERTEXAI", raising=False)
+    monkeypatch.setattr(llm_module, "google_api_key", "test-key")
+
+    kwargs = _build_llm_kwargs("gemini-2.5-flash-lite")
+
+    assert not _use_vertexai()
+    assert kwargs["api_key"] == "test-key"
+    assert "vertexai" not in kwargs
+    assert "project" not in kwargs
+
+
+def test_vertexai_kwargs_use_adc_without_api_key(monkeypatch) -> None:
+    monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "true")
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "woice-prod")
+    monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "asia-south1")
+
+    kwargs = _build_llm_kwargs("gemini-2.5-flash-lite")
+
+    # Vertex AI authenticates via ADC; the plugin nulls any key, so we never send one.
+    assert _use_vertexai()
+    assert kwargs["vertexai"] is True
+    assert kwargs["project"] == "woice-prod"
+    assert kwargs["location"] == "asia-south1"
+    assert "api_key" not in kwargs
+
+
+def test_vertexai_infers_project_and_defaults_location(monkeypatch) -> None:
+    monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "1")
+    monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+    monkeypatch.delenv("GOOGLE_CLOUD_LOCATION", raising=False)
+
+    kwargs = _build_llm_kwargs("gemini-2.5-flash-lite")
+
+    # Project omitted so the plugin infers it from ADC; location falls back.
+    assert kwargs["vertexai"] is True
+    assert "project" not in kwargs
+    assert kwargs["location"] == "us-central1"
+    assert "api_key" not in kwargs
 
 
 def test_llm_uses_fallback_adapter_by_default(monkeypatch) -> None:

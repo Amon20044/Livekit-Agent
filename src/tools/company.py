@@ -1,4 +1,5 @@
 import asyncio
+import ipaddress
 import json
 import logging
 import os
@@ -94,9 +95,27 @@ def _lead_ttl_seconds() -> int:
         return 86_400
 
 
+def _redis_url() -> str:
+    return _clean_env("REDIS_URL") or "redis://localhost:6379/0"
+
+
 def _redis_client() -> Redis:
-    redis_url = _clean_env("REDIS_URL") or "redis://localhost:6379/0"
-    return Redis.from_url(redis_url, decode_responses=True)
+    return Redis.from_url(_redis_url(), decode_responses=True)
+
+
+def redis_health_check() -> tuple[bool, str]:
+    """Ping Redis so callers can surface an unreachable store at startup.
+
+    Caller memory and per-call checkpoints swallow every Redis error so a storage
+    outage never breaks a live call — which also means resume silently does nothing
+    when Redis is down. This check lets the worker log one clear warning instead.
+    Returns ``(ok, detail)`` and never raises.
+    """
+    try:
+        _redis_client().ping()
+    except Exception as exc:
+        return False, f"{type(exc).__name__}: {exc}"
+    return True, "ok"
 
 
 def save_completed_lead_to_redis(
@@ -482,7 +501,12 @@ def _get_room_name(context: RunContext) -> str:
 
 
 def caller_number_from_room(room) -> str | None:
-    """Extract the caller's phone number from a room's SIP participant identity."""
+    """Extract the caller's phone number from a room's SIP participant.
+
+    Prefers the dispatch-rule identity (``sip_<number>`` or a raw ``+<number>``)
+    and falls back to the ``sip.phoneNumber`` / ``sip.from`` participant attribute
+    that LiveKit SIP sets even when the identity is customized.
+    """
     participants = getattr(room, "remote_participants", {}) or {}
 
     for participant in participants.values():
@@ -492,11 +516,85 @@ def caller_number_from_room(room) -> str | None:
         if identity.startswith("+"):
             return identity
 
+        attributes = getattr(participant, "attributes", None) or {}
+        number = attributes.get("sip.phoneNumber") or attributes.get("sip.from")
+        if number:
+            return number.strip()
+
+    return None
+
+
+# Participant attribute / metadata keys a web frontend can use to hand the
+# visitor's IP to the agent (WebRTC does not expose the client IP otherwise).
+_WEB_IP_KEYS = ("visitor_ip", "client_ip", "remote_ip", "ip")
+
+
+def _normalize_ip(value: str | None) -> str | None:
+    """Return a canonical IP string, taking the first hop of an XFF list."""
+    if not value:
+        return None
+    candidate = value.split(",")[0].strip()
+    try:
+        return str(ipaddress.ip_address(candidate))
+    except ValueError:
+        return None
+
+
+def web_visitor_ip_from_room(room) -> str | None:
+    """Best-effort visitor IP for a web session.
+
+    The browser's IP is not visible to the agent over WebRTC, so the frontend
+    must attach it as a participant attribute (or a JSON metadata field) using one
+    of ``_WEB_IP_KEYS``. Returns the first valid IP found, or None.
+    """
+    participants = getattr(room, "remote_participants", {}) or {}
+
+    for participant in participants.values():
+        attributes = getattr(participant, "attributes", None) or {}
+        for key in _WEB_IP_KEYS:
+            ip = _normalize_ip(attributes.get(key))
+            if ip:
+                return ip
+
+        metadata = getattr(participant, "metadata", None)
+        if metadata:
+            try:
+                meta = json.loads(metadata)
+            except (TypeError, ValueError):
+                meta = None
+            if isinstance(meta, dict):
+                for key in _WEB_IP_KEYS:
+                    ip = _normalize_ip(meta.get(key))
+                    if ip:
+                        return ip
+
+    return None
+
+
+def caller_ref_from_room(room) -> str | None:
+    """Stable per-caller key: the phone number for telephony, ``ip:<addr>`` for
+    web visitors, or None when neither is available (e.g. console sessions).
+
+    This is what caller memory and checkpoints are keyed on, so a returning phone
+    caller or a returning web visitor (same IP) is recognized and can resume.
+    """
+    phone = caller_number_from_room(room)
+    if phone:
+        return phone
+
+    ip = web_visitor_ip_from_room(room)
+    if ip:
+        return f"ip:{ip}"
+
     return None
 
 
 def _get_caller_number_from_room(context: RunContext) -> str | None:
     return caller_number_from_room(getattr(context.session, "room", None))
+
+
+def _get_caller_ref_from_room(context: RunContext) -> str | None:
+    return caller_ref_from_room(getattr(context.session, "room", None))
 
 
 async def _end_room_after_playout(context: RunContext) -> None:
@@ -528,9 +626,9 @@ def _schedule_caller_checkpoint(userdata: dict[str, Any] | None):
     if not isinstance(userdata, dict):
         return None
 
-    phone = userdata.get("caller_phone")
+    caller_ref = userdata.get("caller_ref")
     progress = userdata.get("lead_progress") or {}
-    if not phone or not progress or userdata.get("lead_completed"):
+    if not caller_ref or not progress or userdata.get("lead_completed"):
         return None
 
     try:
@@ -540,7 +638,7 @@ def _schedule_caller_checkpoint(userdata: dict[str, Any] | None):
 
     task = loop.create_task(
         asyncio.to_thread(
-            upsert_caller_checkpoint, phone=phone, status="partial", **progress
+            upsert_caller_checkpoint, phone=caller_ref, status="partial", **progress
         )
     )
     tasks = userdata.setdefault("checkpoint_tasks", set())
@@ -610,6 +708,9 @@ async def send_confirmed_lead_email_and_save(
 
     room_name = _get_room_name(context)
     caller_number = _get_caller_number_from_room(context)
+    # Phone for telephony, ip:<addr> for web — so a returning web visitor is also
+    # recognized. Falls back to the phone when both resolve to the same caller.
+    caller_ref = _get_caller_ref_from_room(context) or caller_number
     lead_for_email = {
         "name": name,
         "email": email,
@@ -629,10 +730,10 @@ async def send_confirmed_lead_email_and_save(
         email_sent=True,
     )
 
-    # Remember this caller by phone so a return call is greeted by name. Marking
-    # the session complete stops the shutdown hook from also writing a "partial".
+    # Remember this caller (phone or web IP) so a return visit is greeted by name.
+    # Marking the session complete stops the shutdown hook from writing a "partial".
     save_caller_memory(
-        phone=caller_number,
+        phone=caller_ref,
         status="completed",
         name=name,
         email=email,

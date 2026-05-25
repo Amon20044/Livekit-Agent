@@ -25,20 +25,29 @@ INITIAL_GREETING_INSTRUCTIONS = build_initial_greeting()
 
 
 def build_returning_greeting(record: dict | None) -> str:
-    """Greeting for a recognized returning caller, or the default for a new one."""
+    """Greeting for a recognized returning caller, or the default for a new one.
+
+    Returns an *instruction* for the LLM (not a fixed line) that asks for a warm,
+    personal, naturally varied greeting, so a returning person feels remembered by
+    the company rather than re-greeted by a script.
+    """
     if not record:
         return build_initial_greeting()
 
     company = _company_name()
     name = (record.get("name") or "").strip()
+    address_by = f" by name ({name})" if name else ""
 
     if record.get("status") == "completed":
-        who = f" {name}" if name else ""
         return (
-            f"You are speaking with a returning caller{who} who already completed a "
-            f"waitlist brief with {company}. Greet them warmly by name in one short sentence, "
-            "say it's good to hear from them again, and ask if there's anything more "
-            "they'd like to know about us."
+            f"You are speaking again with a returning {company} contact who already "
+            f"completed their waitlist brief. Greet them like a familiar friend of "
+            f"the company: warm, personal, and genuinely glad they came back. Address "
+            f"them{address_by}, ask how they have been, then offer to help with "
+            "anything more they'd like to know about us. Vary your wording naturally "
+            'every time (for example: "Nice to hear from you again, Amon — how have '
+            'you been?"). Keep it to one or two short, natural sentences; never sound '
+            "scripted."
         )
 
     known = ", ".join(
@@ -48,10 +57,13 @@ def build_returning_greeting(record: dict | None) -> str:
     )
     known_line = f" You already have {known}." if known else ""
     return (
-        "You are speaking with a returning caller who started but did not finish "
-        f"earlier.{known_line} Greet them warmly as {company} in one short sentence, "
-        "say you're happy to reconnect, and offer to pick up where you left off. "
-        "Confirm the details you already have instead of asking again."
+        f"You are speaking again with a returning {company} contact who started a "
+        f"waitlist brief earlier but did not finish.{known_line} Greet them warmly and "
+        f"personally{address_by}, like the company remembers them and is happy they "
+        "are back, and say you're glad to reconnect. Vary your wording naturally every "
+        'time (for example: "Welcome back, Amon — great to reconnect!"). Briefly '
+        "confirm the details you already have instead of asking again, then offer to "
+        "pick up where you left off. One or two short, natural sentences."
     )
 
 
@@ -103,7 +115,9 @@ def build_agent_instructions(use_elevenlabs: bool) -> str:
 # Capturing email and phone (important)
 - Email addresses and phone numbers are easy to mishear, so never guess them.
 - Prefer typed input: invite the caller to type their email (and phone, if needed) into the chat, and tell them you will read it back.
-- If they say it out loud, ask them to go slowly; treat spoken "at" as @ and "dot" as a period.
+- If they say it out loud, ask them to go slowly. Only the spoken word "at" (or "at the rate") becomes @, "dot" becomes a period, "underscore" becomes _, and "dash"/"hyphen" becomes -.
+- Capture exactly what is spoken. NEVER add a dot, period, underscore, dash, or space that the caller did not actually say. Spoken words, letters, and digits run together with nothing between them: "amon sharma two thousand at gmail dot com" is amonsharma2000@gmail.com, NOT amon.sharma.2000@gmail.com.
+- Do not reformat names into a firstname.lastname pattern. Pass the address to the tool as the caller said it (you may turn spoken "at"/"dot" into @/.); the system handles the spacing.
 - On a phone call, you can ask the caller to enter their phone number on the keypad and press the pound key, then call get_dialed_phone_number and read it back. Keypad entry is not available on web sessions.
 - Always read an email back grouped clearly and a phone number back one digit at a time, then ask "Did I get that right?" before relying on it.
 

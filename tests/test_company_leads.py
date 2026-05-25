@@ -34,6 +34,9 @@ class FakeRedis:
     "spoken, expected",
     [
         ("amon sharma 2000 at gmail dot com", "amonsharma2000@gmail.com"),
+        # Digits dictated one at a time ("2 0 0 0") still join with nothing — the
+        # normalizer never inserts the dots an LLM might invent ("amon.sharma.2000").
+        ("amon sharma 2 0 0 0 at gmail dot com", "amonsharma2000@gmail.com"),
         ("amon@example.com", "amon@example.com"),
         ("Amon @ Gmail . com", "amon@gmail.com"),
         ("john dot doe at the rate company dot co dot uk", "john.doe@company.co.uk"),
@@ -455,6 +458,82 @@ def test_caller_number_from_room_handles_no_participants() -> None:
     assert woice.caller_number_from_room(FakeRoom()) is None
 
 
+def _room_with(**participant_attrs):
+    participant = SimpleNamespace(
+        identity=participant_attrs.pop("identity", ""),
+        attributes=participant_attrs.pop("attributes", {}),
+        metadata=participant_attrs.pop("metadata", None),
+    )
+    return SimpleNamespace(remote_participants={"p": participant})
+
+
+def test_caller_number_from_room_reads_sip_phone_attribute() -> None:
+    # Dispatch rules can set a custom identity; the number still rides sip.phoneNumber.
+    room = _room_with(
+        identity="agent-caller-1", attributes={"sip.phoneNumber": "+14155550123"}
+    )
+    assert woice.caller_number_from_room(room) == "+14155550123"
+
+
+def test_web_visitor_ip_from_attribute_and_metadata() -> None:
+    assert (
+        woice.web_visitor_ip_from_room(
+            _room_with(attributes={"visitor_ip": "203.0.113.7"})
+        )
+        == "203.0.113.7"
+    )
+    # First hop of an X-Forwarded-For style value wins.
+    assert (
+        woice.web_visitor_ip_from_room(
+            _room_with(attributes={"client_ip": "198.51.100.9, 10.0.0.1"})
+        )
+        == "198.51.100.9"
+    )
+    assert (
+        woice.web_visitor_ip_from_room(
+            _room_with(metadata=json.dumps({"ip": "192.0.2.5"}))
+        )
+        == "192.0.2.5"
+    )
+
+
+def test_web_visitor_ip_rejects_garbage() -> None:
+    assert (
+        woice.web_visitor_ip_from_room(
+            _room_with(attributes={"visitor_ip": "not-an-ip"})
+        )
+        is None
+    )
+    assert woice.web_visitor_ip_from_room(_room_with()) is None
+
+
+def test_caller_ref_prefers_phone_then_ip_then_none() -> None:
+    assert (
+        woice.caller_ref_from_room(_room_with(identity="sip_+918200962735"))
+        == "+918200962735"
+    )
+    assert (
+        woice.caller_ref_from_room(_room_with(attributes={"visitor_ip": "203.0.113.7"}))
+        == "ip:203.0.113.7"
+    )
+    assert woice.caller_ref_from_room(_room_with()) is None
+
+
+def test_redis_health_check_reports_ok_and_failure(monkeypatch) -> None:
+    monkeypatch.setattr(
+        woice, "_redis_client", lambda: SimpleNamespace(ping=lambda: True)
+    )
+    assert woice.redis_health_check() == (True, "ok")
+
+    def boom():
+        raise ConnectionError("refused")
+
+    monkeypatch.setattr(woice, "_redis_client", lambda: SimpleNamespace(ping=boom))
+    ok, detail = woice.redis_health_check()
+    assert ok is False
+    assert "refused" in detail
+
+
 def test_lookup_caller_returns_none_without_phone() -> None:
     assert woice.lookup_caller(None) is None
     assert woice.lookup_caller("") is None
@@ -588,7 +667,7 @@ async def test_note_lead_progress_checkpoints_per_number_in_background(
 
     monkeypatch.setattr(woice, "upsert_caller_checkpoint", fake_upsert)
 
-    userdata = {"caller_phone": "+918200962735", "lead_progress": {}}
+    userdata = {"caller_ref": "+918200962735", "lead_progress": {}}
     context = SimpleNamespace(session=SimpleNamespace(userdata=userdata))
 
     await woice.note_lead_progress._func(
@@ -634,7 +713,7 @@ async def test_note_lead_progress_skips_checkpoint_when_completed(monkeypatch) -
     )
 
     userdata = {
-        "caller_phone": "+918200962735",
+        "caller_ref": "+918200962735",
         "lead_progress": {},
         "lead_completed": True,
     }

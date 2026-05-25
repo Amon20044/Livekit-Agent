@@ -44,8 +44,9 @@ from tools import (
     send_confirmed_lead_email_and_save,
 )
 from tools.company import (
-    caller_number_from_room,
+    caller_ref_from_room,
     lookup_caller,
+    redis_health_check,
     upsert_caller_checkpoint,
 )
 
@@ -104,8 +105,28 @@ def _livekit_cloud_transport() -> bool:
     return ".livekit.cloud" in (os.getenv("LIVEKIT_URL") or "").lower()
 
 
+def _aicoustics_license_key() -> str | None:
+    """Direct ai-coustics license key, which lets NC run without LiveKit Cloud."""
+    key = (os.getenv("AICOUSTICS_LICENSE_KEY") or "").strip()
+    return key or None
+
+
 def _noise_cancellation_enabled() -> bool:
-    return _env_bool("ENABLE_NOISE_CANCELLATION", _livekit_cloud_transport())
+    # ai-coustics input enhancement removes background noise *before* STT, so the
+    # transcriber stops hearing the room. It needs either LiveKit Cloud (cloud
+    # billing) or a direct ai-coustics license key, so auto-on only when one of
+    # those is available; otherwise it would fail to authenticate. Override with
+    # ENABLE_NOISE_CANCELLATION.
+    default_on = _livekit_cloud_transport() or _aicoustics_license_key() is not None
+    return _env_bool("ENABLE_NOISE_CANCELLATION", default_on)
+
+
+def _aicoustics_auth() -> ai_coustics.AuthBase:
+    """Use the direct license key when set, else fall back to LiveKit Cloud auth."""
+    key = _aicoustics_license_key()
+    if key:
+        return ai_coustics.Auth.ai_coustics_api(license_key=key)
+    return ai_coustics.Auth.livekit_cloud()
 
 
 def _noise_cancellation_model() -> ai_coustics.EnhancerModel:
@@ -129,7 +150,8 @@ def _room_options() -> room_io.RoomOptions:
 
     audio_input = room_io.AudioInputOptions(
         noise_cancellation=ai_coustics.audio_enhancement(
-            model=_noise_cancellation_model()
+            model=_noise_cancellation_model(),
+            auth=_aicoustics_auth(),
         ),
     )
     return room_io.RoomOptions(audio_input=audio_input)
@@ -176,14 +198,26 @@ async def entrypoint(ctx: JobContext):
     # DTMF digits so the agent can read them back instead of guessing from speech.
     dtmf_collector = DtmfCollector()
 
-    # Recognize returning callers by phone (telephony only). The lookup is
-    # safe on web sessions (no number -> None) and never raises.
-    caller_phone = caller_number_from_room(ctx.room)
-    returning_caller = lookup_caller(caller_phone)
+    # Caller memory and resume are keyed on Redis. If it's unreachable, every read
+    # and write silently no-ops (so a live call never breaks) — which looks exactly
+    # like "resume isn't working". Log one clear warning instead of failing quietly.
+    redis_ok, redis_detail = redis_health_check()
+    if not redis_ok:
+        logger.warning(
+            "Redis unreachable (%s) at %s — returning-caller memory and resume are "
+            "DISABLED for this call. Start Redis or set REDIS_URL.",
+            redis_detail,
+            os.getenv("REDIS_URL", "redis://localhost:6379/0"),
+        )
+
+    # Recognize returning callers: phone for telephony, IP for web sessions. The
+    # lookup is safe when neither is available (-> None) and never raises.
+    caller_ref = caller_ref_from_room(ctx.room)
+    returning_caller = lookup_caller(caller_ref)
     if returning_caller is not None:
         logger.info(
             "Returning caller %s recognized (status=%s)",
-            caller_phone,
+            caller_ref,
             returning_caller.get("status"),
         )
 
@@ -203,7 +237,7 @@ async def entrypoint(ctx: JobContext):
         user_away_timeout=None,
         userdata={
             "dtmf": dtmf_collector,
-            "caller_phone": caller_phone,
+            "caller_ref": caller_ref,
             "returning_caller": returning_caller,
             "lead_progress": {},
             "lead_completed": False,
@@ -221,14 +255,14 @@ async def entrypoint(ctx: JobContext):
         pending = session.userdata.get("checkpoint_tasks")
         if pending:
             await asyncio.gather(*list(pending), return_exceptions=True)
-        if not caller_phone or session.userdata.get("lead_completed"):
+        if not caller_ref or session.userdata.get("lead_completed"):
             return
         progress = session.userdata.get("lead_progress") or {}
         if not progress:
             return
         await asyncio.to_thread(
             upsert_caller_checkpoint,
-            phone=caller_phone,
+            phone=caller_ref,
             status="partial",
             **progress,
         )
@@ -326,6 +360,20 @@ async def entrypoint(ctx: JobContext):
             await background_audio.aclose()
 
     ctx.add_shutdown_callback(close_background_audio)
+
+    if _noise_cancellation_enabled():
+        auth_mode = "ai-coustics license key" if _aicoustics_license_key() else "LiveKit Cloud"
+        logger.info(
+            "Input noise cancellation ON (%s, model=%s) — STT receives denoised audio",
+            auth_mode,
+            _noise_cancellation_model().name,
+        )
+    else:
+        logger.warning(
+            "Input noise cancellation OFF — STT hears raw audio including background "
+            "noise/voices. Set AICOUSTICS_LICENSE_KEY (self-hosted) or run on LiveKit "
+            "Cloud, then ENABLE_NOISE_CANCELLATION=true."
+        )
 
     await session.start(
         room=ctx.room,
