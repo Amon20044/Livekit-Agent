@@ -2,10 +2,16 @@ from types import SimpleNamespace
 
 import pytest
 from livekit.agents import BuiltinAudioClip, llm
-from livekit.plugins import aws, elevenlabs, groq, sarvam
+from livekit.plugins import ai_coustics, aws, elevenlabs, groq, sarvam
 
 from app import agent_session as agent_module
-from app.agent_session import WoiceVoiceAgent, _build_vad, _noise_cancellation_enabled
+from app.agent_session import (
+    WoiceVoiceAgent,
+    _aicoustics_auth,
+    _aicoustics_license_key,
+    _build_vad,
+    _noise_cancellation_enabled,
+)
 from audio.background import _build_background_audio_player
 from core.env import _env_bool, _env_float, _env_int, _plugin_model
 from inferences import llm as llm_module
@@ -206,6 +212,9 @@ def test_build_stt_uses_speechmatics_defaults_from_reference_config(
     monkeypatch.delenv("SPEECHMATICS_END_OF_UTTERANCE_SILENCE_TRIGGER", raising=False)
     monkeypatch.setenv("SPEECHMATICS_TURN_DETECTION_MODE", "fixed")
     monkeypatch.delenv("SPEECHMATICS_ENABLE_DIARIZATION", raising=False)
+    monkeypatch.delenv("SPEECHMATICS_PREFER_CURRENT_SPEAKER", raising=False)
+    monkeypatch.delenv("SPEECHMATICS_SPEAKER_SENSITIVITY", raising=False)
+    monkeypatch.delenv("SPEECHMATICS_MAX_SPEAKERS", raising=False)
 
     stt_module.build_stt("en")
 
@@ -223,6 +232,10 @@ def test_build_stt_uses_speechmatics_defaults_from_reference_config(
     assert captured["enable_diarization"] is True
     assert captured["speaker_active_format"] == "<{speaker_id}>{text}</{speaker_id}>"
     assert captured["speaker_passive_format"] == "[{speaker_id}^PASSIVE*] {text}"
+    # Locks STT onto the customer; optional diarization knobs stay unset by default.
+    assert captured["prefer_current_speaker"] is True
+    assert "speaker_sensitivity" not in captured
+    assert "max_speakers" not in captured
     assert [
         (entry.content, entry.sounds_like) for entry in captured["additional_vocab"]
     ] == [
@@ -231,6 +244,25 @@ def test_build_stt_uses_speechmatics_defaults_from_reference_config(
         ("2000", ["two thousands"]),
         ("Speechmatics", ["speech-matics"]),
     ]
+
+
+def test_build_stt_speaker_focus_knobs_are_configurable(monkeypatch) -> None:
+    captured: dict = {}
+
+    class FakeSTT:
+        def __init__(self, **kwargs) -> None:
+            captured.update(kwargs)
+
+    monkeypatch.setattr(stt_module.speechmatics, "STT", FakeSTT)
+    monkeypatch.setenv("SPEECHMATICS_PREFER_CURRENT_SPEAKER", "false")
+    monkeypatch.setenv("SPEECHMATICS_SPEAKER_SENSITIVITY", "0.4")
+    monkeypatch.setenv("SPEECHMATICS_MAX_SPEAKERS", "2")
+
+    stt_module.build_stt("en")
+
+    assert captured["prefer_current_speaker"] is False
+    assert captured["speaker_sensitivity"] == 0.4
+    assert captured["max_speakers"] == 2
 
 
 def test_build_stt_speechmatics_latency_and_diarization_are_configurable(
@@ -371,11 +403,33 @@ def test_vad_load_uses_fast_production_defaults(monkeypatch) -> None:
 
 def test_noise_cancellation_defaults_to_livekit_cloud_only(monkeypatch) -> None:
     monkeypatch.delenv("ENABLE_NOISE_CANCELLATION", raising=False)
+    monkeypatch.delenv("AICOUSTICS_LICENSE_KEY", raising=False)
     monkeypatch.setenv("LIVEKIT_URL", "ws://localhost:7880")
     assert _noise_cancellation_enabled() is False
 
     monkeypatch.setenv("LIVEKIT_URL", "wss://woice-prod.livekit.cloud")
     assert _noise_cancellation_enabled() is True
+
+
+def test_noise_cancellation_auto_enables_with_license_key(monkeypatch) -> None:
+    # A direct ai-coustics license key lets NC run on self-hosted/localhost, so it
+    # should auto-enable even when the URL is not LiveKit Cloud.
+    monkeypatch.delenv("ENABLE_NOISE_CANCELLATION", raising=False)
+    monkeypatch.setenv("LIVEKIT_URL", "ws://localhost:7880")
+    monkeypatch.setenv("AICOUSTICS_LICENSE_KEY", "lic-123")
+    assert _noise_cancellation_enabled() is True
+
+
+def test_aicoustics_auth_uses_license_key_then_cloud(monkeypatch) -> None:
+    monkeypatch.setenv("AICOUSTICS_LICENSE_KEY", "lic-123")
+    assert _aicoustics_license_key() == "lic-123"
+    license_auth = _aicoustics_auth()
+    assert isinstance(license_auth, ai_coustics.AiCousticsApi)
+    assert license_auth.provider == "aiCousticsApi"
+
+    monkeypatch.delenv("AICOUSTICS_LICENSE_KEY", raising=False)
+    assert _aicoustics_license_key() is None
+    assert _aicoustics_auth().provider == "livekitCloud"
 
 
 def test_turn_handling_defaults_to_multilingual_detector(monkeypatch) -> None:
