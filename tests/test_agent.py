@@ -645,9 +645,9 @@ def test_sarvam_tts_uses_multilingual_indian_defaults(monkeypatch) -> None:
     assert tts._opts.speaker == "shubh"
 
 
-def test_session_costs_include_speechmatics_gemini_and_sarvam() -> None:
+def test_session_costs_include_stt_gemini_and_sarvam() -> None:
     pricing = {
-        "speechmatics_stt_per_minute": 0.01,
+        "stt_per_minute": 0.01,
         "gemini_input_per_1m": 0.10,
         "gemini_output_per_1m": 0.40,
         "sarvam_tts_per_1k_chars": 0.02,
@@ -668,15 +668,15 @@ def test_session_costs_include_speechmatics_gemini_and_sarvam() -> None:
 
     costs = _session_costs(usage, pricing, tts_provider="sarvam")
 
-    assert costs["speechmatics"] == pytest.approx(0.01)
+    assert costs["stt"] == pytest.approx(0.01)
     assert costs["llm"] == pytest.approx(0.275)
     assert costs["sarvam"] == pytest.approx(0.02)
     assert costs["total"] == pytest.approx(0.305)
 
 
-def test_session_costs_include_speechmatics_gemini_and_elevenlabs() -> None:
+def test_session_costs_include_stt_gemini_and_elevenlabs() -> None:
     pricing = {
-        "speechmatics_stt_per_minute": 0.01,
+        "stt_per_minute": 0.01,
         "gemini_input_per_1m": 0.10,
         "gemini_output_per_1m": 0.40,
         "sarvam_tts_per_1k_chars": 0.02,
@@ -697,26 +697,26 @@ def test_session_costs_include_speechmatics_gemini_and_elevenlabs() -> None:
 
     costs = _session_costs(usage, pricing, tts_provider="elevenlabs")
 
-    assert costs["speechmatics"] == pytest.approx(0.01)
+    assert costs["stt"] == pytest.approx(0.01)
     assert costs["llm"] == pytest.approx(0.275)
     assert costs["elevenlabs"] == pytest.approx(0.05)
     assert costs["total"] == pytest.approx(0.335)
 
 
 def test_cost_delta_and_summary_format() -> None:
-    current = {"speechmatics": 0.02, "llm": 0.03, "sarvam": 0.04, "total": 0.09}
-    previous = {"speechmatics": 0.01, "llm": 0.01, "sarvam": 0.03, "total": 0.05}
+    current = {"stt": 0.02, "llm": 0.03, "sarvam": 0.04, "total": 0.09}
+    previous = {"stt": 0.01, "llm": 0.01, "sarvam": 0.03, "total": 0.05}
 
     delta = _cost_delta(current, previous)
 
     assert delta == pytest.approx(
-        {"speechmatics": 0.01, "llm": 0.02, "sarvam": 0.01, "total": 0.04}
+        {"stt": 0.01, "llm": 0.02, "sarvam": 0.01, "total": 0.04}
     )
     assert _format_cost_summary(delta) == (
-        "speechmatics=$0.010000 llm=$0.020000 sarvam=$0.010000 total=$0.040000"
+        "stt=$0.010000 llm=$0.020000 sarvam=$0.010000 total=$0.040000"
     )
     assert _loggable_costs(delta) == {
-        "speechmatics": "$0.010000",
+        "stt": "$0.010000",
         "llm": "$0.020000",
         "sarvam": "$0.010000",
         "total": "$0.040000",

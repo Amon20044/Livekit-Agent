@@ -182,7 +182,7 @@ async def entrypoint(ctx: JobContext):
         tts_provider,
     )
     tts_language = (
-        os.getenv("ELEVENLABS_TTS_LANGUAGE", "hi")
+        os.getenv("ELEVENLABS_TTS_LANGUAGE", "auto")
         if use_elevenlabs
         else sarvam_target_language_code
     )
@@ -318,7 +318,7 @@ async def entrypoint(ctx: JobContext):
     if _env_bool("COST_LOGGING_ENABLED", False):
         pricing = _pricing_config()
         last_logged_costs = {
-            "speechmatics": 0.0,
+            "stt": 0.0,
             "llm": 0.0,
             tts_provider: 0.0,
             "total": 0.0,

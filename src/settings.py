@@ -18,7 +18,6 @@ COMPANY_NAME = os.getenv("COMPANY_NAME", "Woice AI")
 COMPANY_WEBSITE = os.getenv("COMPANY_WEBSITE", "https://woice.vercel.app")
 
 # Provider API keys
-speechmatics_api_key = os.getenv("SPEECHMATICS_API_KEY")
 deepgram_api_key = os.getenv("DEEPGRAM_API_KEY")
 google_api_key = os.getenv("GOOGLE_API_KEY")
 elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY") or os.getenv("ELEVEN_API_KEY")

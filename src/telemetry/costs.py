@@ -9,8 +9,8 @@ def _money(value: float) -> str:
 
 def _pricing_config() -> dict[str, float]:
     return {
-        "speechmatics_stt_per_minute": _env_float(
-            "COST_SPEECHMATICS_STT_PER_MINUTE_USD",
+        "stt_per_minute": _env_float(
+            "COST_DEEPGRAM_STT_PER_MINUTE_USD",
             0.0,
             min_value=0.0,
         ),
@@ -43,12 +43,10 @@ def _usage_costs(
     *,
     tts_provider: str = "sarvam",
 ) -> dict[str, float]:
-    costs = {"speechmatics": 0.0, "llm": 0.0, tts_provider: 0.0}
+    costs = {"stt": 0.0, "llm": 0.0, tts_provider: 0.0}
 
     if usage.type == "stt_usage":
-        costs["speechmatics"] = (
-            usage.audio_duration / 60.0 * pricing["speechmatics_stt_per_minute"]
-        )
+        costs["stt"] = usage.audio_duration / 60.0 * pricing["stt_per_minute"]
     elif usage.type == "llm_usage":
         billable_input_tokens = max(usage.input_tokens - usage.input_cached_tokens, 0)
         costs["llm"] = (
@@ -71,7 +69,7 @@ def _session_costs(
     *,
     tts_provider: str = "sarvam",
 ) -> dict[str, float]:
-    totals = {"speechmatics": 0.0, "llm": 0.0, tts_provider: 0.0}
+    totals = {"stt": 0.0, "llm": 0.0, tts_provider: 0.0}
 
     for usage in session_usage.model_usage:
         for provider, cost in _usage_costs(
@@ -89,7 +87,7 @@ def _cost_delta(
 ) -> dict[str, float]:
     keys = [
         key
-        for key in ("speechmatics", "llm", "sarvam", "elevenlabs", "total")
+        for key in ("stt", "llm", "sarvam", "elevenlabs", "total")
         if key in current or key in previous
     ]
     return {
@@ -99,7 +97,7 @@ def _cost_delta(
 
 def _format_cost_summary(costs: dict[str, float]) -> str:
     parts = [
-        f"speechmatics={_money(costs['speechmatics'])}",
+        f"stt={_money(costs['stt'])}",
         f"llm={_money(costs['llm'])}",
     ]
     for provider in ("sarvam", "elevenlabs"):
@@ -112,6 +110,6 @@ def _format_cost_summary(costs: dict[str, float]) -> str:
 def _loggable_costs(costs: dict[str, float]) -> dict[str, str]:
     return {
         key: _money(costs[key])
-        for key in ("speechmatics", "llm", "sarvam", "elevenlabs", "total")
+        for key in ("stt", "llm", "sarvam", "elevenlabs", "total")
         if key in costs
     }
