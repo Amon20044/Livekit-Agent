@@ -231,8 +231,13 @@ async def entrypoint(ctx: JobContext):
         min_consecutive_speech_delay=_env_float(
             "MIN_CONSECUTIVE_SPEECH_DELAY", 0.05, min_value=0.0, max_value=2.0
         ),
+        # AEC warmup disables interruptions on the agent's FIRST speaking turn so it
+        # doesn't hear its own voice echo back (before the echo-canceller converges)
+        # and self-interrupt — which chops the opening greeting. LiveKit's default is
+        # 3.0s; 1.5s covers convergence on typical hardware while restoring barge-in
+        # sooner. Too-low values (<0.5s) cause the greeting to stutter at startup.
         aec_warmup_duration=_env_float(
-            "AEC_WARMUP_DURATION", 0.1, min_value=0.0, max_value=5.0
+            "AEC_WARMUP_DURATION", 1.5, min_value=0.0, max_value=5.0
         ),
         user_away_timeout=None,
         userdata={
