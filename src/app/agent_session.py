@@ -181,7 +181,7 @@ async def entrypoint(ctx: JobContext):
         tts_provider,
     )
     tts_language = (
-        os.getenv("ELEVENLABS_TTS_LANGUAGE", "en")
+        os.getenv("ELEVENLABS_TTS_LANGUAGE", "hi")
         if use_elevenlabs
         else sarvam_target_language_code
     )

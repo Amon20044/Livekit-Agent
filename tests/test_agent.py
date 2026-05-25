@@ -173,15 +173,15 @@ async def test_woice_agent_greets_and_asks_for_name_on_enter(monkeypatch) -> Non
     assert "waitlist" in INITIAL_GREETING_INSTRUCTIONS.lower()
 
 
-def test_woice_agent_uses_english_language_defaults_with_elevenlabs(
+def test_woice_agent_uses_hindi_language_defaults_with_elevenlabs(
     monkeypatch,
 ) -> None:
     monkeypatch.setenv("USE_EL", "true")
 
     agent = WoiceVoiceAgent()
 
-    assert "English by default" in agent.instructions
-    assert "Hindi by default" not in agent.instructions
+    assert "Hindi by default" in agent.instructions
+    assert "English by default" not in agent.instructions
     assert agent.tools == [
         send_confirmed_lead_email_and_save,
         get_dialed_phone_number,
@@ -448,20 +448,19 @@ def test_turn_handling_defaults_to_multilingual_detector(monkeypatch) -> None:
     assert isinstance(options["turn_detection"], FakeMultilingualModel)
 
 
-def test_use_el_defaults_speech_stack_to_english(monkeypatch) -> None:
-    class FakeEnglishModel:
+def test_use_el_defaults_speech_stack_to_hindi_multilingual(monkeypatch) -> None:
+    class FakeMultilingualModel:
         pass
 
     monkeypatch.setenv("USE_EL", "true")
     monkeypatch.delenv("SPEECHMATICS_STT_LANGUAGE", raising=False)
-    monkeypatch.delenv("ELEVENLABS_SPEECHMATICS_STT_LANGUAGE", raising=False)
-    monkeypatch.setattr(voice_module, "EnglishModel", FakeEnglishModel)
+    monkeypatch.setattr(voice_module, "MultilingualModel", FakeMultilingualModel)
 
-    assert _stt_language() == "en"
-    assert isinstance(_build_turn_detector(), FakeEnglishModel)
+    assert _stt_language() == "hi"
+    assert isinstance(_build_turn_detector(), FakeMultilingualModel)
 
 
-def test_sarvam_defaults_speechmatics_stack_to_english(monkeypatch) -> None:
+def test_sarvam_defaults_speech_stack_to_hindi_multilingual(monkeypatch) -> None:
     class FakeMultilingualModel:
         pass
 
@@ -469,15 +468,15 @@ def test_sarvam_defaults_speechmatics_stack_to_english(monkeypatch) -> None:
     monkeypatch.delenv("SPEECHMATICS_STT_LANGUAGE", raising=False)
     monkeypatch.setattr(voice_module, "MultilingualModel", FakeMultilingualModel)
 
-    assert _stt_language() == "en"
+    assert _stt_language() == "hi"
     assert isinstance(_build_turn_detector(), FakeMultilingualModel)
 
 
 def test_speechmatics_language_is_configurable(monkeypatch) -> None:
     monkeypatch.setenv("USE_EL", "false")
-    monkeypatch.setenv("SPEECHMATICS_STT_LANGUAGE", "hi")
+    monkeypatch.setenv("SPEECHMATICS_STT_LANGUAGE", "en")
 
-    assert _stt_language() == "hi"
+    assert _stt_language() == "en"
 
 
 def test_gemini_25_defaults_to_fast_thinking_and_compact_output(monkeypatch) -> None:
@@ -625,7 +624,7 @@ def test_build_groq_llm_applies_fast_defaults(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_use_el_builds_optimized_elevenlabs_english_tts(monkeypatch) -> None:
+async def test_use_el_builds_optimized_elevenlabs_hindi_tts(monkeypatch) -> None:
     monkeypatch.setenv("USE_EL", "true")
     monkeypatch.delenv("ELEVENLABS_TTS_MODEL", raising=False)
     monkeypatch.delenv("ELEVENLABS_TTS_LANGUAGE", raising=False)
@@ -636,45 +635,18 @@ async def test_use_el_builds_optimized_elevenlabs_english_tts(monkeypatch) -> No
 
     assert isinstance(tts, elevenlabs.TTS)
     assert tts._opts.model == "eleven_flash_v2_5"
-    assert str(tts._opts.language) == "en"
+    # Multilingual flash model speaks Hindi by default.
+    assert str(tts._opts.language) == "hi"
     assert tts._opts.voice_id == "test-voice"
-    # PCM output (no MP3 decode) and a warm WebSocket are the packet-loss levers.
-    assert tts._opts.encoding == "pcm_24000"
-    assert tts._opts.sample_rate == 24000
-    assert tts._opts.inactivity_timeout == 180
-    assert tts._opts.apply_text_normalization == "auto"
-    assert tts._opts.streaming_latency == 3
+    # Optimized = the plugin's own defaults, not manual overrides: auto_mode streams
+    # a sentence at a time, mp3_22050_32 has the lowest time-to-first-byte, text
+    # normalization is "auto", and the WebSocket stays warm for 180s.
+    assert tts._opts.encoding == "mp3_22050_32"
+    assert tts._opts.sample_rate == 22050
     assert tts._opts.auto_mode is True
-    assert tts._opts.chunk_length_schedule == [50, 70, 100, 140]
-    assert tts._opts.sync_alignment is False
-    assert tts._opts.voice_settings.stability == 0.45
-    assert tts._opts.voice_settings.similarity_boost == 0.75
-    assert tts._opts.voice_settings.speed == 1.08
-    assert tts._opts.voice_settings.use_speaker_boost is False
+    assert tts._opts.apply_text_normalization == "auto"
+    assert tts._opts.inactivity_timeout == 180
     await tts.aclose()
-
-
-def test_elevenlabs_encoding_defaults_to_pcm_and_validates(monkeypatch) -> None:
-    monkeypatch.delenv("ELEVENLABS_OUTPUT_FORMAT", raising=False)
-    assert tts_module._elevenlabs_encoding() == "pcm_24000"
-
-    monkeypatch.setenv("ELEVENLABS_OUTPUT_FORMAT", "pcm_16000")
-    assert tts_module._elevenlabs_encoding() == "pcm_16000"
-
-    # Unsupported formats fall back to the safe PCM default instead of crashing.
-    monkeypatch.setenv("ELEVENLABS_OUTPUT_FORMAT", "flac_9000")
-    assert tts_module._elevenlabs_encoding() == "pcm_24000"
-
-
-def test_elevenlabs_text_normalization_validates(monkeypatch) -> None:
-    monkeypatch.delenv("ELEVENLABS_TEXT_NORMALIZATION", raising=False)
-    assert tts_module._elevenlabs_text_normalization() == "auto"
-
-    monkeypatch.setenv("ELEVENLABS_TEXT_NORMALIZATION", "off")
-    assert tts_module._elevenlabs_text_normalization() == "off"
-
-    monkeypatch.setenv("ELEVENLABS_TEXT_NORMALIZATION", "loud")
-    assert tts_module._elevenlabs_text_normalization() == "auto"
 
 
 def test_sarvam_tts_uses_multilingual_indian_defaults(monkeypatch) -> None:

@@ -68,13 +68,9 @@ def build_returning_greeting(record: dict | None) -> str:
 
 
 def _language_instructions(use_elevenlabs: bool) -> str:
-    if use_elevenlabs:
-        return (
-            "# Language\n"
-            "- English by default. Switch only if the user clearly asks. "
-            "Keep names, product names, and technical terms in English. Never announce a language switch."
-        )
-
+    # Hindi-first and multilingual on every TTS. ElevenLabs flash and Sarvam are
+    # both multilingual, so the agent opens in Hindi and follows the caller into
+    # any language without announcing the switch.
     return (
         "# Language\n"
         "- Hindi by default (natural conversational). Match the user's language if they switch. "
