@@ -24,7 +24,7 @@ RUN uv sync --locked --no-install-project
 COPY . .
 RUN uv sync --locked
 
-RUN uv run python src/agent.py download-files
+RUN uv run -m livekit.agents download-files
 
 FROM base
 

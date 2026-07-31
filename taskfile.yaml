@@ -1,6 +1,5 @@
 version: "3"
 output: interleaved
-dotenv: [".env.local"]
 vars:
   INDENT: 4
   REL_PATH: "{{ relPath .USER_WORKING_DIR .ROOT_DIR }}"
@@ -49,10 +48,20 @@ tasks:
       - echo ''
 
   install:
-    desc: "Bootstrap application for local development"
+    desc: "Bootstrap from the repository root .env"
     cmds:
       - "uv sync"
   dev:
     interactive: true
     cmds:
       - "uv run src/agent.py dev"
+
+  test:
+    cmds:
+      - "uv run pytest"
+      - "uv run ruff check src tests"
+
+  deploy:
+    desc: "Deploy this worker after lk cloud auth"
+    cmds:
+      - "lk agent deploy"

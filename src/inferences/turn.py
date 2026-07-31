@@ -1,80 +1,28 @@
-import os
-from typing import Any
-
-from livekit.agents import TurnHandlingOptions
-
-from core.env import _env_bool, _env_float, _env_int
-from inferences.voice import _build_turn_detector
-
-_DEFAULT_TURN_DETECTION = object()
+from livekit.agents import TurnHandlingOptions, inference
 
 
-def _interruption_mode() -> str:
-    # LiveKit recommends adaptive interruption handling when it is available.
-    # It is a LiveKit Cloud feature, so local/self-hosted defaults stay on VAD
-    # and filter backchannel with MIN_INTERRUPTION_WORDS instead.
-    default_mode = (
-        "adaptive" if ".livekit.cloud" in os.getenv("LIVEKIT_URL", "") else "vad"
-    )
-    mode = os.getenv("INTERRUPTION_MODE", default_mode).strip().lower()
-    if mode in {"adaptive", "vad"}:
-        return mode
-    return "vad"
-
-
-def _build_turn_handling_options(
-    turn_detection: Any = _DEFAULT_TURN_DETECTION,
-) -> TurnHandlingOptions:
-    if turn_detection is _DEFAULT_TURN_DETECTION:
-        turn_detection = _build_turn_detector()
-
+def build_turn_handling() -> TurnHandlingOptions:
     return TurnHandlingOptions(
-        turn_detection=turn_detection,
+        turn_detection=inference.TurnDetector(),
         endpointing={
-            "mode": os.getenv("ENDPOINTING_MODE", "dynamic"),
-            "min_delay": _env_float(
-                "MIN_ENDPOINTING_DELAY", 0.35, min_value=0.05, max_value=2.0
-            ),
-            "max_delay": _env_float(
-                "MAX_ENDPOINTING_DELAY", 1.2, min_value=0.1, max_value=4.0
-            ),
-            "alpha": _env_float(
-                "ENDPOINTING_ALPHA", 0.65, min_value=0.0, max_value=1.0
-            ),
+            "mode": "dynamic",
+            "min_delay": 0.35,
+            "max_delay": 1.2,
+            "alpha": 0.65,
         },
         interruption={
-            "enabled": _env_bool("INTERRUPTIONS_ENABLED", True),
-            "mode": _interruption_mode(),
-            "min_duration": _env_float(
-                "MIN_INTERRUPTION_DURATION", 0.5, min_value=0.05, max_value=3.0
-            ),
-            # Intelligent barge-in gate: VAD + STT keep detecting speech, but the
-            # agent keeps talking through anything up to 5 words and only yields on
-            # the 6th word. This rides over backchannel and short fillers ("okay",
-            # "haan right", "yeah sure got it") that should not cut the agent off,
-            # while still letting a real interruption ("stop, that's not what I
-            # meant") through. Lower MIN_INTERRUPTION_WORDS toward 2-3 if the agent
-            # ever talks over genuine interruptions.
-            "min_words": _env_int(
-                "MIN_INTERRUPTION_WORDS", 6, min_value=0, max_value=10
-            ),
+            "enabled": True,
+            "mode": "adaptive",
+            "min_duration": 0.45,
+            "min_words": 3,
             "discard_audio_if_uninterruptible": True,
-            "false_interruption_timeout": _env_float(
-                "FALSE_INTERRUPTION_TIMEOUT", 2.0, min_value=0.0, max_value=10.0
-            ),
+            "false_interruption_timeout": 2.0,
             "resume_false_interruption": True,
         },
         preemptive_generation={
-            "enabled": _env_bool("PREEMPTIVE_GENERATION", True),
-            "preemptive_tts": _env_bool("PREEMPTIVE_TTS", False),
-            "max_speech_duration": _env_float(
-                "PREEMPTIVE_MAX_SPEECH_DURATION",
-                2.5,
-                min_value=0.5,
-                max_value=15.0,
-            ),
-            "max_retries": _env_int(
-                "PREEMPTIVE_MAX_RETRIES", 1, min_value=0, max_value=5
-            ),
+            "enabled": True,
+            "preemptive_tts": False,
+            "max_speech_duration": 2.5,
+            "max_retries": 1,
         },
     )

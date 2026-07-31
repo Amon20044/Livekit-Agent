@@ -1,398 +1,595 @@
+from __future__ import annotations
+
 import asyncio
+import json
 import logging
-import os
+import re
+from contextlib import suppress
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from typing import Any
 
 from livekit.agents import (
     Agent,
     AgentSession,
-    ErrorEvent,
+    ConversationItemAddedEvent,
     JobContext,
     JobProcess,
-    SessionUsageUpdatedEvent,
+    RunContext,
+    function_tool,
+    get_job_context,
+    llm,
     room_io,
 )
-from livekit.plugins import ai_coustics, silero
+from livekit.agents.beta.workflows import WarmTransferTask, WorkflowInstructions
+from livekit.plugins import silero
 
-from app.dtmf import DtmfCollector, register_dtmf_collector
-from audio.background import _build_background_audio_player
-from core.env import _env_bool, _env_float, _env_int, _plugin_model
-from inferences.llm import _build_llm, _llm_provider
-from inferences.stt import _stt_provider_name, build_stt, stt_model_name
-from inferences.tts import _build_tts
-from inferences.turn import _build_turn_handling_options
-from inferences.voice import _stt_language, _tts_provider, _use_elevenlabs_tts
-from prompts.instructions import build_agent_instructions, build_returning_greeting
+from app.control_plane import ControlPlaneClient, parse_job_metadata
+from app.graph import choose_transition, graph_is_acyclic
+from app.models import RuntimeConfig
+from inferences.llm import build_llm
+from inferences.stt import build_stt
+from inferences.tts import build_tts
+from inferences.turn import build_turn_handling
 from settings import (
-    bedrock_model,
-    elevenlabs_voice_id,
-    gemini_model,
-    groq_model,
-    sarvam_model,
-    sarvam_speaker,
-    sarvam_target_language_code,
-)
-from telemetry.costs import (
-    _cost_delta,
-    _format_cost_summary,
-    _loggable_costs,
-    _pricing_config,
-    _session_costs,
-)
-from tools import (
-    get_dialed_phone_number,
-    note_lead_progress,
-    send_confirmed_lead_email_and_save,
-)
-from tools.company import (
-    caller_ref_from_room,
-    lookup_caller,
-    redis_health_check,
-    upsert_caller_checkpoint,
+    CONTROL_PLANE_URL,
+    DEFAULT_INBOUND_SWARM_ID,
+    DEFAULT_OUTBOUND_SWARM_ID,
+    INTERNAL_API_KEY,
+    PYTHON_API_BASE_URL,
+    validate_provider_credentials,
+    validate_runtime_settings,
 )
 
-logger = logging.getLogger("agent")
+logger = logging.getLogger("stylme.voice")
+
+_PHONE_LAST4 = re.compile(r"^[0-9]{4}$")
 
 
-class WoiceVoiceAgent(Agent):
-    def __init__(self) -> None:
+async def brief_answered_human_and_connect(
+    human_session: Any,
+    *,
+    briefing: str,
+    connect: Any,
+    briefing_timeout: float = 12.0,
+) -> None:
+    """Brief an answered support line, then bridge without another voice gate."""
+    try:
+        async with asyncio.timeout(briefing_timeout):
+            speech = human_session.say(briefing, allow_interruptions=False)
+            await speech.wait_for_playout()
+    except TimeoutError:
+        logger.warning("human transfer briefing timed out; connecting immediately")
+    except Exception as exc:
+        logger.warning(
+            "human transfer briefing failed; connecting immediately: %s", exc
+        )
+    await connect()
+
+
+class AnsweredWarmTransferTask(WarmTransferTask):
+    """Treat an answered support call as acceptance and bridge deterministically."""
+
+    def __init__(
+        self,
+        *args: Any,
+        answer_briefing: str,
+        briefing_timeout: float = 12.0,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self._answer_briefing = answer_briefing
+        self._briefing_timeout = briefing_timeout
+
+    async def on_enter(self) -> None:
+        await super().on_enter()
+        human_session = self._human_agent_sess
+        if human_session is None or self.done():
+            return
+
+        logger.info("human support answered; briefing and bridging automatically")
+
+        async def connect_if_active() -> None:
+            if self.done():
+                return
+            await self.connect_to_caller()
+
+        await brief_answered_human_and_connect(
+            human_session,
+            briefing=self._answer_briefing,
+            connect=connect_if_active,
+            briefing_timeout=self._briefing_timeout,
+        )
+
+
+@dataclass(slots=True)
+class VoiceState:
+    runtime: RuntimeConfig
+    control: ControlPlaneClient
+    call_id: str
+    current_node_key: str
+    direction: str
+    room_name: str
+    captured: dict[str, Any] = field(default_factory=dict)
+    transcript: list[dict[str, Any]] = field(default_factory=list)
+    greeted: bool = False
+
+
+@function_tool()
+async def capture_call_field(
+    context: RunContext[VoiceState], key: str, value: str
+) -> str:
+    """Capture one explicit caller answer for the final disposition.
+
+    Use only keys named in the current capture contract. Never infer a value.
+    """
+    state = context.userdata
+    allowed = {
+        item.key
+        for item in state.runtime.capture_fields_for_node(state.current_node_key)
+    }
+    if key not in allowed:
+        return f"'{key}' is not in this agent's capture contract."
+    state.captured[key] = value.strip()
+    return f"Captured {key}."
+
+
+@function_tool()
+async def search_catalog(context: RunContext[VoiceState], query: str) -> str:
+    """Search real StylMe products for the caller's fashion request.
+
+    Use this before stating product, price, stock, or delivery facts.
+    """
+    state = context.userdata
+    try:
+        result = await state.control.search_catalog(PYTHON_API_BASE_URL, query)
+    except RuntimeError as exc:
+        logger.warning("catalog tool failed: %s", exc)
+        return "StylMe catalogue search is temporarily unavailable. Do not invent products or prices."
+    products = []
+    for item in (result.get("items") or [])[:5]:
+        if not isinstance(item, dict):
+            continue
+        products.append(
+            {
+                "id": item.get("id") or item.get("_id"),
+                "title": item.get("title") or item.get("name"),
+                "brand": item.get("brand"),
+                "pricePaise": item.get("pricePaise") or item.get("sale_price_paise"),
+                "swoopStylEligible": item.get("swoopStylEligible"),
+            }
+        )
+    return json.dumps(
+        {"products": products, "total": result.get("total", len(products))},
+        ensure_ascii=False,
+    )
+
+
+@function_tool()
+async def lookup_order(
+    context: RunContext[VoiceState], order_number: str, phone_last4: str
+) -> str:
+    """Verify an order with its number and the account phone's last four digits.
+
+    Args:
+        order_number: The exact order number stated by the caller.
+        phone_last4: Exactly the final four digits of the account phone number.
+    """
+    normalized_order = order_number.strip()
+    normalized_last4 = re.sub(r"\D", "", phone_last4)
+    if not normalized_order or not _PHONE_LAST4.fullmatch(normalized_last4):
+        return "Ask for the order number and exactly the last four phone digits."
+    state = context.userdata
+    try:
+        result = await state.control.lookup_order(
+            PYTHON_API_BASE_URL, normalized_order, normalized_last4
+        )
+    except RuntimeError as exc:
+        logger.warning("order lookup failed: %s", exc)
+        return "The order could not be verified. Do not reveal or invent any order details."
+    state.captured["order_number"] = normalized_order
+    state.captured["phone_last4"] = normalized_last4
+    state.captured["order_verified"] = True
+    return json.dumps(result, ensure_ascii=False)
+
+
+@function_tool()
+async def capture_callback(
+    context: RunContext[VoiceState],
+    confirmed: bool,
+    preferred_time: str,
+    summary: str,
+) -> str:
+    """Record a human-support callback after the caller explicitly confirms it.
+
+    Args:
+        confirmed: True only after an explicit yes from the caller.
+        preferred_time: The caller's preferred callback time or "any time".
+        summary: A concise factual summary for the human support team.
+    """
+    if not confirmed:
+        return "Callback not recorded because explicit confirmation is still required."
+    state = context.userdata
+    state.captured["callback_requested"] = True
+    state.captured["preferred_callback_at"] = preferred_time.strip() or "any time"
+    state.captured["handoff_summary"] = summary.strip()
+    return "Callback request recorded in this call's support disposition."
+
+
+def apply_opt_out(state: VoiceState, *, confirmed: bool, reason: str) -> str:
+    """Persist only an explicit do-not-call request in the call disposition."""
+    if not confirmed:
+        return "Opt-out not recorded because explicit confirmation is required."
+    state.captured["opt_out"] = True
+    state.captured["opt_out_reason"] = reason.strip() or "Explicit do-not-call request"
+    state.captured["outcome"] = "opt-out"
+    return "Do-not-call preference recorded for this call."
+
+
+@function_tool()
+async def record_opt_out(
+    context: RunContext[VoiceState], confirmed: bool, reason: str
+) -> str:
+    """Record an explicit request not to receive future outbound calls.
+
+    Args:
+        confirmed: True only after the caller clearly asks not to be called again.
+        reason: The caller's own concise opt-out wording or reason.
+    """
+    return apply_opt_out(context.userdata, confirmed=confirmed, reason=reason)
+
+
+async def perform_warm_transfer(
+    state: VoiceState,
+    *,
+    chat_ctx: Any,
+    summary: str,
+    task_factory: Any = AnsweredWarmTransferTask,
+) -> Any:
+    """Run LiveKit's documented warm-transfer workflow with admin configuration."""
+    telephony = state.runtime.telephony
+    human_handoff_number = state.runtime.human_handoff_number_for_node(
+        state.current_node_key
+    )
+    if not human_handoff_number:
+        raise RuntimeError(
+            "The current HIL node has no human handoff number configured."
+        )
+    if not telephony.outbound_trunk_id:
+        raise RuntimeError("The swarm has no managed outbound trunk for human handoff.")
+    instructions = WorkflowInstructions(
+        extra=(
+            "You are the StylMe human-support transfer assistant. Give the human "
+            "a short factual summary, say that the caller is waiting, and connect "
+            "them only after the human confirms they are ready. Escalation summary: "
+            + summary.strip()
+        )
+    )
+    return await task_factory(
+        sip_call_to=human_handoff_number,
+        sip_trunk_id=telephony.outbound_trunk_id,
+        sip_number=telephony.phone_number,
+        chat_ctx=chat_ctx,
+        instructions=instructions,
+        ringing_timeout=30.0,
+        answer_briefing=(
+            "This is a StylMe support transfer. The caller is waiting. "
+            f"Summary: {summary.strip()[:280] or 'The caller requested live support.'} "
+            "Connecting you now."
+        ),
+        briefing_timeout=12.0,
+    )
+
+
+@function_tool()
+async def warm_transfer_to_human(context: RunContext[VoiceState], summary: str) -> str:
+    """Call the admin-configured human and connect them to the caller's room.
+
+    Args:
+        summary: A concise factual summary of the caller's need and verified context.
+    """
+    state = context.userdata
+    factual_summary = summary.strip() or str(state.captured.get("intent") or "")
+    state.captured["handoff_summary"] = factual_summary
+    try:
+        result = await perform_warm_transfer(
+            state,
+            chat_ctx=copy_handoff_chat_context(context.session.current_agent.chat_ctx),
+            summary=factual_summary,
+        )
+    except Exception as exc:
+        logger.warning("warm transfer failed: %s", exc)
+        state.captured["human_handoff_status"] = "unavailable"
+        return (
+            "The live human transfer is unavailable. Tell the caller clearly, then "
+            "offer to record a callback request without claiming anyone has joined."
+        )
+
+    state.captured["human_handoff_status"] = "connected"
+    state.captured["human_agent_identity"] = result.human_agent_identity
+    spoken_summary = factual_summary[:240] or "The caller requested live support."
+    speech = context.session.say(
+        "Your StylMe support specialist is now connected. "
+        f"For context: {spoken_summary} I'll leave you both to continue.",
+        allow_interruptions=False,
+    )
+    await speech.wait_for_playout()
+    await context.session.shutdown(drain=True)
+    return "Human support connected; the AI assistant left the room."
+
+
+def prepare_handoff(state: VoiceState, *, reason: str, route: str = "") -> Any:
+    """Apply one explicit route and resolve the matching outgoing graph edge."""
+    normalized_reason = reason.strip()
+    normalized_route = re.sub(r"[^a-z0-9_]+", "_", route.strip().casefold()).strip("_")
+    state.captured.setdefault("intent", normalized_reason)
+    if not normalized_route:
+        return choose_transition(
+            state.runtime.graph, state.current_node_key, state.captured
+        )
+
+    previous_route = state.captured.get("handoff_route")
+    state.captured["handoff_route"] = normalized_route
+    edge = choose_transition(
+        state.runtime.graph, state.current_node_key, state.captured
+    )
+    if edge is None:
+        if previous_route is None:
+            state.captured.pop("handoff_route", None)
+        else:
+            state.captured["handoff_route"] = previous_route
+    return edge
+
+
+def copy_handoff_chat_context(chat_ctx: Any) -> Any:
+    """Carry conversation turns forward without prior prompts or config records."""
+    return chat_ctx.copy(
+        exclude_instructions=True,
+        exclude_config_update=True,
+    )
+
+
+@function_tool()
+async def handoff_to_next_agent(
+    context: RunContext[VoiceState], reason: str, route: str = ""
+) -> tuple[Agent, str] | str:
+    """Hand off only when captured data matches an allowed outgoing DAG edge.
+
+    Args:
+        reason: A concise factual summary of why the handoff is needed.
+        route: The exact outgoing route named in the current agent instructions.
+    """
+    state = context.userdata
+    node_key = state.current_node_key
+    edge = prepare_handoff(state, reason=reason, route=route)
+    if edge is None:
+        return "No configured handoff condition matches. Continue in the current role or use the verified fallback."
+    await state.control.record_handoff(
+        state.call_id,
+        from_node=node_key,
+        to_node=edge.to_node,
+        reason=reason,
+        captured=state.captured,
+    )
+    state.current_node_key = edge.to_node
+    message = (
+        edge.handoff_message
+        or f"Transferring to {state.runtime.agent_for_node(edge.to_node).name}."
+    )
+    return StylMeVoiceAgent(
+        state,
+        edge.to_node,
+        chat_ctx=copy_handoff_chat_context(context.session.current_agent.chat_ctx),
+    ), message
+
+
+@function_tool()
+async def end_call(context: RunContext[VoiceState], reason: str) -> str:
+    """End the room after a clear goodbye, opt-out, or terminal workflow state."""
+    context.userdata.captured.setdefault("end_reason", reason.strip())
+    speech = context.session.say(
+        "Thank you for your time. Goodbye.", allow_interruptions=False
+    )
+    await speech.wait_for_playout()
+    job = get_job_context()
+    if job is not None:
+        await job.delete_room()
+    return "Call ended."
+
+
+def configured_tools_for_node(
+    state: VoiceState, node_key: str
+) -> list[llm.FunctionTool]:
+    """Return only the explicitly enabled tools for one graph node."""
+    config = state.runtime.agent_for_node(node_key)
+    tools = [capture_call_field]
+    if config.tool_enabled("search_catalog"):
+        tools.append(search_catalog)
+    if config.tool_enabled("lookup_order"):
+        tools.append(lookup_order)
+    if config.tool_enabled("capture_callback"):
+        tools.append(capture_callback)
+    if config.tool_enabled("warm_transfer"):
+        tools.append(warm_transfer_to_human)
+    if config.tool_enabled("record_opt_out"):
+        tools.append(record_opt_out)
+    if config.tool_enabled("handoff") and any(
+        edge.from_node == node_key for edge in state.runtime.graph.edges
+    ):
+        tools.append(handoff_to_next_agent)
+    if config.tool_enabled("end_call"):
+        tools.append(end_call)
+    return tools
+
+
+class StylMeVoiceAgent(Agent):
+    def __init__(self, state: VoiceState, node_key: str, *, chat_ctx=None) -> None:
+        self.state = state
+        self.node_key = node_key
+        config = state.runtime.agent_for_node(node_key)
+        voice = state.runtime.voice_for_node(node_key)
         super().__init__(
-            instructions=build_agent_instructions(_use_elevenlabs_tts()),
-            tools=[
-                send_confirmed_lead_email_and_save,
-                get_dialed_phone_number,
-                note_lead_progress,
-            ],
+            instructions=state.runtime.instructions_for_node(node_key),
+            tools=configured_tools_for_node(state, node_key),
+            llm=build_llm(config.model, state.runtime.credentials.get("openai", "")),
+            stt=build_stt(voice, state.runtime.credentials.get("deepgram", "")),
+            tts=build_tts(voice, state.runtime.credentials.get("sarvam", "")),
+            chat_ctx=chat_ctx,
         )
 
     async def on_enter(self) -> None:
-        userdata = getattr(self.session, "userdata", None)
-        record = (
-            userdata.get("returning_caller") if isinstance(userdata, dict) else None
-        )
-        # Opening line is uninterruptible. At call start the echo canceller has
-        # not converged yet, so an interruptible greeting hears its own audio
-        # echo back and self-interrupts within the first frames — the caller
-        # hears a chopped intro or "no sound." Locking the first turn guarantees
-        # the greeting plays in full; barge-in resumes for the rest of the call.
+        config = self.state.runtime.agent_for_node(self.node_key)
+        node = self.state.runtime.node(self.node_key)
+        self.state.current_node_key = self.node_key
+        if not self.state.greeted:
+            self.state.greeted = True
+            greeting = self.state.runtime.greeting_for_node(self.node_key)
+            instruction = f"Say this greeting naturally in the caller's language, without adding claims: {greeting}"
+        elif node.metadata.get("silentHandoff") is True:
+            instruction = (
+                "Do not speak to the caller. Immediately use the configured handoff "
+                "tool to route from the existing conversation context."
+            )
+        elif config.tool_enabled("warm_transfer"):
+            instruction = (
+                "Tell the caller in one short sentence that you are connecting live "
+                "human support, then immediately call warm_transfer_to_human with a "
+                "concise factual summary from the existing conversation."
+            )
+        else:
+            instruction = f"Briefly introduce your role as {config.name}, acknowledge the handoff context, then continue."
         await self.session.generate_reply(
-            instructions=build_returning_greeting(record),
-            allow_interruptions=False,
+            instructions=instruction, allow_interruptions=False
         )
 
 
-def prewarm(proc: JobProcess):
-    proc.userdata["vad"] = _build_vad()
-
-
-def _build_vad():
-    return silero.VAD.load(
-        min_speech_duration=_env_float(
-            "VAD_MIN_SPEECH_DURATION", 0.04, min_value=0.01, max_value=0.5
-        ),
-        min_silence_duration=_env_float(
-            "VAD_MIN_SILENCE_DURATION", 0.42, min_value=0.1, max_value=1.2
-        ),
-        prefix_padding_duration=_env_float(
-            "VAD_PREFIX_PADDING_DURATION", 0.45, min_value=0.0, max_value=1.0
-        ),
-        max_buffered_speech=_env_float(
-            "VAD_MAX_BUFFERED_SPEECH", 45.0, min_value=5.0, max_value=120.0
-        ),
-        activation_threshold=_env_float(
-            "VAD_ACTIVATION_THRESHOLD", 0.52, min_value=0.1, max_value=0.95
-        ),
-        sample_rate=_vad_sample_rate(),
-        force_cpu=_env_bool("VAD_FORCE_CPU", True),
+def prewarm(proc: JobProcess) -> None:
+    proc.userdata["vad"] = silero.VAD.load(
+        min_speech_duration=0.05,
+        min_silence_duration=0.45,
+        prefix_padding_duration=0.35,
+        activation_threshold=0.5,
+        force_cpu=True,
     )
 
 
-def _livekit_cloud_transport() -> bool:
-    return ".livekit.cloud" in (os.getenv("LIVEKIT_URL") or "").lower()
-
-
-def _aicoustics_license_key() -> str | None:
-    """Direct ai-coustics license key, which lets NC run without LiveKit Cloud."""
-    key = (os.getenv("AICOUSTICS_LICENSE_KEY") or "").strip()
-    return key or None
-
-
-def _noise_cancellation_enabled() -> bool:
-    # ai-coustics input enhancement removes background noise *before* STT, so the
-    # transcriber stops hearing the room. It needs either LiveKit Cloud (cloud
-    # billing) or a direct ai-coustics license key, so auto-on only when one of
-    # those is available; otherwise it would fail to authenticate. Override with
-    # ENABLE_NOISE_CANCELLATION.
-    default_on = _livekit_cloud_transport() or _aicoustics_license_key() is not None
-    return _env_bool("ENABLE_NOISE_CANCELLATION", default_on)
-
-
-def _aicoustics_auth() -> ai_coustics.AuthBase:
-    """Use the direct license key when set, else fall back to LiveKit Cloud auth."""
-    key = _aicoustics_license_key()
-    if key:
-        return ai_coustics.Auth.ai_coustics_api(license_key=key)
-    return ai_coustics.Auth.livekit_cloud()
-
-
-def _noise_cancellation_model() -> ai_coustics.EnhancerModel:
-    model_name = os.getenv("NOISE_CANCELLATION_MODEL", "QUAIL_VF_L").strip().upper()
-    return getattr(
-        ai_coustics.EnhancerModel,
-        model_name,
-        ai_coustics.EnhancerModel.QUAIL_VF_L,
+async def entrypoint(ctx: JobContext) -> None:
+    validate_runtime_settings()
+    await ctx.connect()
+    control = ControlPlaneClient(CONTROL_PLANE_URL, INTERNAL_API_KEY)
+    metadata = parse_job_metadata(getattr(ctx.job, "metadata", ""))
+    swarm_id = metadata.swarm_id or (
+        DEFAULT_OUTBOUND_SWARM_ID
+        if metadata.direction == "outbound"
+        else DEFAULT_INBOUND_SWARM_ID
     )
-
-
-def _vad_sample_rate() -> int:
-    configured = _env_int("VAD_SAMPLE_RATE", 16000, min_value=8000, max_value=16000)
-    return 8000 if configured == 8000 else 16000
-
-
-def _room_options() -> room_io.RoomOptions:
-    audio_input = True
-    if not _noise_cancellation_enabled():
-        return room_io.RoomOptions(audio_input=audio_input)
-
-    audio_input = room_io.AudioInputOptions(
-        noise_cancellation=ai_coustics.audio_enhancement(
-            model=_noise_cancellation_model(),
-            auth=_aicoustics_auth(),
-        ),
-    )
-    return room_io.RoomOptions(audio_input=audio_input)
-
-
-async def entrypoint(ctx: JobContext):
-    use_elevenlabs = _use_elevenlabs_tts()
-    tts_provider = _tts_provider(use_elevenlabs)
-    stt_language = _stt_language(use_elevenlabs)
-    stt_provider = _stt_provider_name()
-    stt_model = stt_model_name()
-    llm_provider = _llm_provider()
-    if llm_provider == "bedrock":
-        llm_model = bedrock_model.strip()
-    elif llm_provider == "groq":
-        llm_model = _plugin_model(groq_model, "groq")
-    else:
-        llm_model = _plugin_model(gemini_model, "google")
-    tts_model = _plugin_model(
-        os.getenv("ELEVENLABS_TTS_MODEL", "eleven_flash_v2_5")
-        if use_elevenlabs
-        else sarvam_model,
-        tts_provider,
-    )
-    tts_language = (
-        os.getenv("ELEVENLABS_TTS_LANGUAGE", "hi")
-        if use_elevenlabs
-        else sarvam_target_language_code
-    )
-    tts_voice = elevenlabs_voice_id if use_elevenlabs else sarvam_speaker
-
-    logger.info(
-        "Starting low-latency voice pipeline with stt=%s:%s llm=%s:%s tts_provider=%s tts=%s:%s voice=%s",
-        f"{stt_provider}/{stt_model}",
-        stt_language,
-        llm_provider,
-        llm_model,
-        tts_provider,
-        tts_model,
-        tts_language,
-        tts_voice,
-    )
-
-    # Phone callers enter their number on the keypad; the collector buffers those
-    # DTMF digits so the agent can read them back instead of guessing from speech.
-    dtmf_collector = DtmfCollector()
-
-    # Caller memory and resume are keyed on Redis. If it's unreachable, every read
-    # and write silently no-ops (so a live call never breaks) — which looks exactly
-    # like "resume isn't working". Log one clear warning instead of failing quietly.
-    redis_ok, redis_detail = redis_health_check()
-    if not redis_ok:
-        logger.warning(
-            "Redis unreachable (%s) at %s — returning-caller memory and resume are "
-            "DISABLED for this call. Start Redis or set REDIS_URL.",
-            redis_detail,
-            os.getenv("REDIS_URL", "redis://localhost:6379/0"),
+    call_id = metadata.call_id
+    if metadata.direction == "inbound" or not call_id:
+        caller, dialed = _sip_numbers(ctx.room)
+        created = await control.create_inbound_call(
+            swarm_id=swarm_id, room=ctx.room.name, caller=caller, dialed=dialed
         )
-
-    # Recognize returning callers: phone for telephony, IP for web sessions. The
-    # lookup is safe when neither is available (-> None) and never raises.
-    caller_ref = caller_ref_from_room(ctx.room)
-    returning_caller = lookup_caller(caller_ref)
-    if returning_caller is not None:
-        logger.info(
-            "Returning caller %s recognized (status=%s)",
-            caller_ref,
-            returning_caller.get("status"),
-        )
-
+        call_id = str(created.get("id") or "")
+    runtime = await control.runtime(swarm_id, call_id)
+    validate_provider_credentials(runtime.credentials)
+    if not graph_is_acyclic(runtime.graph):
+        raise RuntimeError("The selected agent swarm is not a valid DAG")
+    state = VoiceState(
+        runtime=runtime,
+        control=control,
+        call_id=call_id,
+        current_node_key=runtime.graph.entry_node_key,
+        direction=metadata.direction,
+        room_name=ctx.room.name,
+    )
+    initial = runtime.agent_for_node(runtime.graph.entry_node_key)
     session = AgentSession(
-        stt=build_stt(stt_language),
-        llm=_build_llm(llm_model),
-        tts=_build_tts(tts_model),
-        turn_handling=_build_turn_handling_options(),
         vad=ctx.proc.userdata["vad"],
-        use_tts_aligned_transcript=_env_bool("USE_TTS_ALIGNED_TRANSCRIPT", False),
-        min_consecutive_speech_delay=_env_float(
-            "MIN_CONSECUTIVE_SPEECH_DELAY", 0.05, min_value=0.0, max_value=2.0
-        ),
-        # AEC warmup disables interruptions on the agent's FIRST speaking turn so it
-        # doesn't hear its own voice echo back (before the echo-canceller converges)
-        # and self-interrupt — which chops the opening greeting. LiveKit's default is
-        # 3.0s; 1.5s covers convergence on typical hardware while restoring barge-in
-        # sooner. Too-low values (<0.5s) cause the greeting to stutter at startup.
-        aec_warmup_duration=_env_float(
-            "AEC_WARMUP_DURATION", 1.5, min_value=0.0, max_value=5.0
-        ),
-        user_away_timeout=None,
-        userdata={
-            "dtmf": dtmf_collector,
-            "caller_ref": caller_ref,
-            "returning_caller": returning_caller,
-            "lead_progress": {},
-            "lead_completed": False,
-            "checkpoint_tasks": set(),
-        },
+        turn_handling=build_turn_handling(),
+        userdata=state,
     )
 
-    register_dtmf_collector(ctx.room, dtmf_collector)
-
-    async def persist_caller_memory():
-        # Final safety net at call end. Background checkpoints already persist
-        # progress mid-call, so first drain any in-flight checkpoint writes, then
-        # upsert the latest snapshot. A completed lead already wrote a "completed"
-        # record, so only partial progress is persisted here.
-        pending = session.userdata.get("checkpoint_tasks")
-        if pending:
-            await asyncio.gather(*list(pending), return_exceptions=True)
-        if not caller_ref or session.userdata.get("lead_completed"):
+    @session.on("conversation_item_added")
+    def on_conversation_item_added(event: ConversationItemAddedEvent) -> None:
+        item = event.item
+        if not isinstance(item, llm.ChatMessage) or item.role not in {
+            "user",
+            "assistant",
+        }:
             return
-        progress = session.userdata.get("lead_progress") or {}
-        if not progress:
+        text = item.text_content.strip()
+        if not text:
             return
-        await asyncio.to_thread(
-            upsert_caller_checkpoint,
-            phone=caller_ref,
-            status="partial",
-            **progress,
+        state.transcript.append(
+            {
+                "role": item.role,
+                "agentId": runtime.agent_for_node(state.current_node_key).id
+                if item.role == "assistant"
+                else "",
+                "text": text,
+                "createdAt": datetime.now(UTC).isoformat(),
+            }
         )
 
-    ctx.add_shutdown_callback(persist_caller_memory)
-
-    @session.on("error")
-    def _on_error(ev: ErrorEvent):
-        error_text = str(ev.error)
-        if "no response generated" not in error_text:
+    async def finalize() -> None:
+        timeout_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await timeout_task
+        if not state.call_id:
             return
-
-        logger.warning("Recovering from empty LLM response: %s", error_text)
         try:
-            session.say(
-                "Sorry, say that again?",
-                allow_interruptions=True,
-                add_to_chat_ctx=False,
-            )
-        except RuntimeError:
-            logger.warning("Could not speak LLM recovery message; session is closing")
+            await control.complete_call(state.call_id, state.transcript)
+        except Exception:
+            logger.exception("failed to persist post-call transcript/disposition")
 
-    @session.on("user_interruption_detected")
-    def _on_user_interruption_detected(ev):
-        logger.debug(
-            "User interruption detected: timestamp=%s probability=%s",
-            getattr(ev, "timestamp", None),
-            getattr(ev, "probability", None),
-        )
-
-    @session.on("agent_false_interruption")
-    def _on_agent_false_interruption(ev):
-        logger.debug("False interruption detected; resuming agent speech")
-
-    @session.on("user_state_changed")
-    def _on_user_state_changed(ev):
-        logger.debug("User state changed: %s", getattr(ev, "new_state", None))
-
-    # Cost accounting runs floating-point math and emits a log line on every usage
-    # event, so it stays off the hot path by default. Enable COST_LOGGING_ENABLED
-    # only when you need billing visibility.
-    if _env_bool("COST_LOGGING_ENABLED", False):
-        pricing = _pricing_config()
-        last_logged_costs = {
-            "stt": 0.0,
-            "llm": 0.0,
-            tts_provider: 0.0,
-            "total": 0.0,
-        }
-
-        @session.on("session_usage_updated")
-        def _on_session_usage_updated(ev: SessionUsageUpdatedEvent):
-            nonlocal last_logged_costs
-
-            current_costs = _session_costs(
-                ev.usage,
-                pricing,
-                tts_provider=tts_provider,
-            )
-            delta_costs = _cost_delta(current_costs, last_logged_costs)
-
-            if delta_costs["llm"] == 0.0 and delta_costs[tts_provider] == 0.0:
-                return
-
-            last_logged_costs = current_costs
-
-            logger.info(
-                "Turn cost delta: %s | call total: %s",
-                _format_cost_summary(delta_costs),
-                _format_cost_summary(current_costs),
-                extra={
-                    "cost_delta": _loggable_costs(delta_costs),
-                    "cost_total": _loggable_costs(current_costs),
-                },
-            )
-
-        async def log_usage():
-            final_costs = _session_costs(
-                session.usage,
-                pricing,
-                tts_provider=tts_provider,
-            )
-            logger.info(
-                "Session ended. Final call cost: %s",
-                _format_cost_summary(final_costs),
-                extra={"cost_total": _loggable_costs(final_costs)},
-            )
-
-        ctx.add_shutdown_callback(log_usage)
-
-    background_audio = _build_background_audio_player()
-
-    async def close_background_audio():
-        if background_audio is not None:
-            await background_audio.aclose()
-
-    ctx.add_shutdown_callback(close_background_audio)
-
-    if _noise_cancellation_enabled():
-        auth_mode = (
-            "ai-coustics license key" if _aicoustics_license_key() else "LiveKit Cloud"
-        )
-        logger.info(
-            "Input noise cancellation ON (%s, model=%s) — STT receives denoised audio",
-            auth_mode,
-            _noise_cancellation_model().name,
-        )
-    else:
-        logger.warning(
-            "Input noise cancellation OFF — STT hears raw audio including background "
-            "noise/voices. Set AICOUSTICS_LICENSE_KEY (self-hosted) or run on LiveKit "
-            "Cloud, then ENABLE_NOISE_CANCELLATION=true."
-        )
-
+    timeout_task = asyncio.create_task(
+        _enforce_call_limit(ctx, session, initial.voice.end_call_after_sec)
+    )
+    ctx.add_shutdown_callback(finalize)
+    logger.info(
+        "starting StylMe call call_id=%s swarm_id=%s direction=%s entry=%s",
+        call_id,
+        swarm_id,
+        metadata.direction,
+        runtime.graph.entry_node_key,
+    )
     await session.start(
         room=ctx.room,
-        agent=WoiceVoiceAgent(),
-        room_options=_room_options(),
+        agent=StylMeVoiceAgent(state, runtime.graph.entry_node_key),
+        room_options=room_io.RoomOptions(audio_input=True),
     )
 
-    if background_audio is not None:
-        await background_audio.start(room=ctx.room, agent_session=session)
+
+async def _enforce_call_limit(
+    ctx: JobContext, session: AgentSession, limit_seconds: int
+) -> None:
+    await asyncio.sleep(max(30, limit_seconds))
+    speech = session.say(
+        "We have reached the configured call time limit. Thank you for calling StylMe. Goodbye.",
+        allow_interruptions=False,
+    )
+    await speech.wait_for_playout()
+    await ctx.delete_room()
+
+
+def _sip_numbers(room) -> tuple[str, str]:
+    caller = ""
+    dialed = ""
+    for participant in (getattr(room, "remote_participants", {}) or {}).values():
+        attributes = getattr(participant, "attributes", {}) or {}
+        identity = getattr(participant, "identity", "") or ""
+        caller = caller or str(
+            attributes.get("sip.phoneNumber")
+            or attributes.get("sip.from")
+            or (
+                identity.removeprefix("sip_")
+                if identity.startswith("sip_")
+                else identity
+                if identity.startswith("+")
+                else ""
+            )
+        )
+        dialed = dialed or str(
+            attributes.get("sip.trunkPhoneNumber") or attributes.get("sip.to") or ""
+        )
+    return caller, dialed

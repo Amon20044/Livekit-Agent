@@ -3,21 +3,15 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "woice-ai-agent"
+name = "stylme-livekit-agent"
 version = "1.0.0"
-description = "Woice AI waitlist voice agent built with LiveKit Agents for Python"
+description = "Configurable StylMe voice swarm runtime for LiveKit Cloud"
 requires-python = ">=3.10, <3.15"
 
 dependencies = [
-    "livekit",
-    "livekit-agents[aws,deepgram,elevenlabs,google,groq,sarvam,silero]~=1.5",
-    "livekit-plugins-turn-detector",
-    "python-dotenv>=1.0",
-    "annotated-types",
     "aiohttp>=3.9",
-    "sentencepiece",
-    "livekit-plugins-ai-coustics>=0.2.13",
-    "redis>=5.0",
+    "livekit-agents[deepgram,openai,sarvam,silero]~=1.6.5",
+    "python-dotenv>=1.0",
 ]
 
 [dependency-groups]
